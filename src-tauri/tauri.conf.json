@@ -12,13 +12,23 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "tauri-app",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": false
+      },
+      {
+        "label": "splashscreen",
+        "title": "splashscreen",
+        "url": "./splashscreen"
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "pattern": {
+        "use": "brownfield"
+      }
     }
   },
   "bundle": {

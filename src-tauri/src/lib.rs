@@ -1,9 +1,12 @@
+mod ocr;
+
 mod splashscreen;
 
 use std::sync::Mutex;
 
 use tauri::async_runtime::spawn;
 
+use crate::ocr::*;
 use crate::splashscreen::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -14,7 +17,7 @@ pub fn run() {
             backend_task: false,
         }))
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, set_complete])
+        .invoke_handler(tauri::generate_handler![greet, set_complete, detect_text])
         .setup(|app| {
             spawn(setup(app.handle().clone()));
             Ok(())

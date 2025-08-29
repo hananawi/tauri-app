@@ -22,6 +22,11 @@
         "label": "splashscreen",
         "title": "splashscreen",
         "url": "./splashscreen"
+      },
+      {
+        "label": "ocr",
+        "title": "ocr",
+        "url": "./ocr"
       }
     ],
     "security": {

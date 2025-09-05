@@ -19,7 +19,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![greet, set_complete, detect_text])
         .setup(|app| {
-            spawn(setup(app.handle().clone()));
+            // spawn(setup(app.handle().clone()));
+            spawn(setup_mask(app.handle().clone()));
             Ok(())
         })
         .run(tauri::generate_context!())

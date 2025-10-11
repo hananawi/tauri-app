@@ -31,10 +31,10 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
     }
 
     setRect({
-      x: start.x,
-      y: start.y,
-      width: pos.x - start.x,
-      height: pos.y - start.y,
+      x: Math.min(start.x, pos.x),
+      y: Math.min(start.y, pos.y),
+      width: Math.abs(pos.x - start.x),
+      height: Math.abs(pos.y - start.y),
     });
   };
 
@@ -48,6 +48,9 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
       if (e.key === "Enter" && rect && onFinish) {
         const win = getCurrentWindow();
         const pos = await win.innerPosition();
+
+        console.log("rifa pos", pos, rect);
+
         // Vision's SCScreenshotManager.captureImageInRect expects points (logical coords)
         const screenRect: Selection = {
           x: Math.round(pos.x + rect.x),
@@ -70,8 +73,27 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      <Layer listening={false}>
+        <Rect
+          x={0}
+          y={0}
+          width={window.innerWidth}
+          height={window.innerHeight}
+          fill="rgba(0, 0, 0, 0.3)"
+        />
+        {rect && rect.width > 0 && rect.height > 0 && (
+          <Rect
+            x={rect.x}
+            y={rect.y}
+            width={rect.width}
+            height={rect.height}
+            fill="rgba(0,0,0,1)"
+            globalCompositeOperation="destination-out"
+          />
+        )}
+      </Layer>
       <Layer>
-        {rect && (
+        {rect && rect.width > 0 && rect.height > 0 && (
           <Rect
             x={rect.x}
             y={rect.y}
@@ -81,6 +103,7 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
             strokeWidth={2}
             dash={[6, 4]}
             listening={false}
+            fillEnabled={false}
           />
         )}
       </Layer>

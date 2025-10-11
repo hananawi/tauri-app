@@ -4,8 +4,7 @@ import { ScreenShotSelector } from "../components/ScreenShotSelector";
 
 export const MaskPage = () => {
   return (
-    <div className="bg-transparent w-screen h-screen">
-      mask page
+    <div className="relative w-screen h-screen">
       <ScreenShotSelector
         onFinish={(rect) => {
           console.log("ScreenShotSelector finished");

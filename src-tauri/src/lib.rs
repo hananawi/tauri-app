@@ -5,6 +5,10 @@ mod splashscreen;
 use std::sync::Mutex;
 
 use tauri::async_runtime::spawn;
+use tauri_plugin_log::{
+    log::LevelFilter, Builder as LogBuilder, Target as LogTarget,
+    TargetKind as LogTargetKind,
+};
 
 use crate::ocr::*;
 use crate::splashscreen::*;
@@ -17,6 +21,15 @@ pub fn run() {
             backend_task: false,
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            LogBuilder::default()
+                .targets([
+                    LogTarget::new(LogTargetKind::Stdout),
+                    LogTarget::new(LogTargetKind::Webview),
+                ])
+                .level(LevelFilter::Info)
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             greet,
             set_complete,

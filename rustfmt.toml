@@ -1,0 +1,7 @@
+# rustfmt.toml 或 .rustfmt.toml
+max_width = 80          # 每行最大字符数
+comment_width = 80      # 注释也按这个宽度包裹
+wrap_comments = true     # 注释自动换行
+
+# 可选：关掉小启发式，让它更严格按 max_width 换行
+# use_small_heuristics = "Off"

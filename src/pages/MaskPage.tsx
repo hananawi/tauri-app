@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { info } from "@tauri-apps/plugin-log";
 import { ScreenShotSelector } from "../components/ScreenShotSelector";
 
 export const MaskPage = () => {
@@ -8,6 +9,7 @@ export const MaskPage = () => {
       <ScreenShotSelector
         onFinish={(rect) => {
           console.log("ScreenShotSelector finished");
+          info("info ScreenShotSelector finished");
 
           // Call backend OCR with the selected rect
           // invoke("detect_text", { rect });

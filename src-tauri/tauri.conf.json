@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -22,12 +23,21 @@
       {
         "label": "splashscreen",
         "title": "splashscreen",
-        "url": "./splashscreen"
+        "url": "/splashscreen",
+        "visible": false
       },
       {
-        "label": "ocr",
-        "title": "ocr",
-        "url": "./ocr"
+        "label": "mask",
+        "url": "/mask",
+        "fullscreen": false,
+        "transparent": true,
+        "decorations": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "backgroundColor": "#00000000",
+        "visible": true
       }
     ],
     "security": {

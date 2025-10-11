@@ -10,19 +10,24 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.7",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "konva": "^10.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-konva": "^19.0.7",
     "react-router-dom": "^6.30.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.12",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "tailwindcss": "^4.1.12",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   },
-  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
+  "packageManager": "pnpm@10.15.1+sha512.34e538c329b5553014ca8e8f4535997f96180a1d0f614339357449935350d924e22f8614682191264ec33d1462ac21561aff97f6bb18065351c162c7e8f6de67"
 }

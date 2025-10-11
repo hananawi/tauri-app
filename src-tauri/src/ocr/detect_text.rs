@@ -5,6 +5,7 @@ use std::{
 
 use block2::RcBlock;
 use objc2::AnyThread;
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
     CGDisplayBounds, CGImage, CGMainDisplayID, CGPreflightScreenCaptureAccess,
     CGRequestScreenCaptureAccess,
@@ -20,11 +21,12 @@ use crate::ocr::utils;
 use super::Ocr;
 
 impl Ocr {
-    pub fn detect_text(self) {
+    pub fn detect_text(&self, rect: CGRect) -> Vec<String> {
         check_permission().unwrap();
 
-        let objc2_options = utils::convert_options(self.options);
         let detected_texts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+        let detected_texts_for_cb = Arc::downgrade(&detected_texts);
+        let objc2_options = utils::convert_options(self.options.clone());
         let (tx, rx) = mpsc::channel();
 
         unsafe {
@@ -49,13 +51,13 @@ impl Ocr {
                     &options,
                 );
 
-                let detected_texts = Arc::clone(&detected_texts);
-                let tx_inner = tx.clone();
+                let detected_texts_for_cb = detected_texts_for_cb.clone();
+                let tx_for_cb = tx.clone();
                 let ocr_cb =
                     RcBlock::new(move |req_ptr: NonNull<VNRequest>, err_ptr: *mut NSError| {
                         if !err_ptr.is_null() {
                             eprint!("Vision error: {:#?}", &*err_ptr);
-                            tx_inner.send(()).unwrap();
+                            tx_for_cb.send(()).unwrap();
                             return;
                         }
 
@@ -66,7 +68,9 @@ impl Ocr {
                                     result.downcast_ref::<VNRecognizedTextObservation>()
                                 {
                                     if let Some(text) = text_obs.topCandidates(1).firstObject() {
-                                        if let Ok(mut lock) = detected_texts.lock() {
+                                        if let Ok(mut lock) =
+                                            detected_texts_for_cb.upgrade().unwrap().lock()
+                                        {
                                             lock.push(text.string().to_string());
                                         }
                                     }
@@ -74,7 +78,7 @@ impl Ocr {
                             }
                         }
 
-                        tx_inner.send(()).unwrap();
+                        tx_for_cb.send(()).unwrap();
                     });
 
                 let ocr_req = VNRecognizeTextRequest::initWithCompletionHandler(
@@ -96,11 +100,20 @@ impl Ocr {
                 }
             });
 
-            let rect = CGDisplayBounds(CGMainDisplayID());
             SCScreenshotManager::captureImageInRect_completionHandler(rect, Some(&shot_cb));
         }
 
         rx.recv().unwrap();
+
+        println!(
+            "detected_texts ref amount: {}",
+            Arc::strong_count(&detected_texts)
+        );
+
+        Arc::try_unwrap(detected_texts)
+            .expect("还有其他 Arc 强引用在活着")
+            .into_inner()
+            .unwrap()
     }
 }
 

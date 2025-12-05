@@ -13,22 +13,9 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "label": "main",
-        "title": "tauri-app",
-        "width": 800,
-        "height": 600,
-        "visible": false,
-        "url": "/"
-      },
-      {
-        "label": "splashscreen",
-        "title": "splashscreen",
-        "url": "/splashscreen",
-        "visible": false
-      },
-      {
-        "label": "mask",
-        "url": "/mask",
+        "title": "Tauri App",
+        "label": "clip",
+        "url": "/clip",
         "fullscreen": false,
         "transparent": true,
         "decorations": false,
@@ -37,7 +24,7 @@
         "shadow": false,
         "skipTaskbar": true,
         "backgroundColor": "#00000000",
-        "visible": true
+        "visible": false
       }
     ],
     "security": {

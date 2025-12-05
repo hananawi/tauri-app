@@ -1,7 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import "./App.css";
+import { ClipPage } from "./pages/ClipPage";
 import MainPage from "./pages/MainPage";
-import { MaskPage } from "./pages/MaskPage";
 import SplashScreen from "./pages/SplashScreen";
 
 function App() {
@@ -18,7 +18,7 @@ function App() {
           <Route path="/" element={<MainPage />} />
           <Route path="/splashscreen" element={<SplashScreen />} />
           {/* <Route path="/ocr" element={<OcrPage />} /> */}
-          <Route path="/mask" element={<MaskPage />} />
+          <Route path="/clip" element={<ClipPage />} />
         </Routes>
       </div>
     </>

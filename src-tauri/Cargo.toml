@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
@@ -33,4 +33,6 @@ objc2-foundation = { version = "0.3.1", features = ["NSString", "NSArray"] }
 objc2-screen-capture-kit = "0.3.1"
 objc2-vision = "0.3.1"
 dispatch2 = "0.3.0"
-reqwest = { version = "0.12.23", features = ["blocking", "json"] }
+tauri-plugin-global-shortcut = "2.3.1"
+tauri-plugin-http = { version = "2", features = ["json"] }
+

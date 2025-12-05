@@ -1,21 +1,36 @@
+import { TauriEvent } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Konva from "konva";
 import { useEffect, useState } from "react";
-import { Layer, Rect, Stage } from "react-konva";
+import { Group, Layer, Rect, Stage } from "react-konva";
+import { Html } from "react-konva-utils";
+import { useEventListener } from "usehooks-ts";
+import { DetectionResultItem } from "../types/clip";
 
 type Selection = { x: number; y: number; width: number; height: number };
 
-type PropsType = {
+export type PropsType = {
+  detectedItems?: DetectionResultItem[];
   onFinish?: (rect: Selection) => void;
+  onBlur?: () => void;
 };
 
-export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
+export const ScreenShotSelector: React.FC<PropsType> = ({
+  detectedItems,
+  onFinish,
+  onBlur,
+}) => {
+  console.log("detectedItems", detectedItems);
+
   const [start, setStart] = useState<{ x: number; y: number } | null>(null);
   const [rect, setRect] = useState<Selection | null>(null);
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pos = e.target.getStage()?.getPointerPosition();
-    if (!pos) return;
+    if (!pos) {
+      return;
+    }
+
     setStart({ x: pos.x, y: pos.y });
     setRect({ x: pos.x, y: pos.y, width: 0, height: 0 });
   };
@@ -42,33 +57,42 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
     setStart(null);
   };
 
+  useEventListener("keypress", async (event) => {
+    console.log("keypress event", event);
+
+    if (event.key === "Enter" && rect && onFinish) {
+      const win = getCurrentWindow();
+      const pos = await win.innerPosition();
+
+      console.log("rect position", pos, rect);
+
+      // Vision's SCScreenshotManager.captureImageInRect expects points (logical coords)
+      const screenRect: Selection = {
+        x: Math.round(pos.x + rect.x),
+        y: Math.round(pos.y + rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+      onFinish(screenRect);
+    }
+  });
+
   useEffect(() => {
-    const onKeyDown = async (e: KeyboardEvent) => {
-      console.log("rifa e", e);
-      if (e.key === "Enter" && rect && onFinish) {
-        const win = getCurrentWindow();
-        const pos = await win.innerPosition();
+    const win = getCurrentWindow();
 
-        console.log("rifa pos", pos, rect);
+    win.listen(TauriEvent.WINDOW_BLUR, () => {
+      console.log("window blur");
 
-        // Vision's SCScreenshotManager.captureImageInRect expects points (logical coords)
-        const screenRect: Selection = {
-          x: Math.round(pos.x + rect.x),
-          y: Math.round(pos.y + rect.y),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        };
-        onFinish(screenRect);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [rect, onFinish]);
+      setStart(null);
+      setRect(null);
+      onBlur?.();
+    });
+  }, []);
 
   return (
     <Stage
-      width={window.innerWidth}
-      height={window.innerHeight}
+      width={window.screen.width}
+      height={window.screen.height}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -77,10 +101,11 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
         <Rect
           x={0}
           y={0}
-          width={window.innerWidth}
-          height={window.innerHeight}
+          width={window.screen.width}
+          height={window.screen.height}
           fill="rgba(0, 0, 0, 0.3)"
         />
+
         {rect && rect.width > 0 && rect.height > 0 && (
           <Rect
             x={rect.x}
@@ -91,7 +116,20 @@ export const ScreenShotSelector: React.FC<PropsType> = ({ onFinish }) => {
             globalCompositeOperation="destination-out"
           />
         )}
+
+        {/* for overlay text */}
+        {rect && detectedItems && detectedItems.length > 0 ? (
+          <Group x={rect.x} y={rect.y}>
+            {detectedItems.map((item, index) => (
+              <Html groupProps={{ x: item.rect.x, y: item.rect.y }}>
+                <div className="bg-white">{item.text}</div>
+              </Html>
+            ))}
+          </Group>
+        ) : null}
       </Layer>
+
+      {/* for border */}
       <Layer>
         {rect && rect.width > 0 && rect.height > 0 && (
           <Rect

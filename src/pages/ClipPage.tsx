@@ -26,6 +26,9 @@ export const ClipPage = () => {
 
     info(`Detected text: ${JSON.stringify(results, null, 2)}`);
     setDetectedItems(results);
+    invoke("gen_audio_from_text", {
+      text: results.map((item) => item.text).join(" "),
+    });
   };
 
   return (

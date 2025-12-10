@@ -1,7 +1,8 @@
-import { TauriEvent } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Konva from "konva";
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { Group, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
 import { useEventListener } from "usehooks-ts";
@@ -78,15 +79,19 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
   });
 
   useEffect(() => {
-    const win = getCurrentWindow();
+    const removeListenerPromise = listen("window-will-hide", () => {
+      console.log("window hide");
 
-    win.listen(TauriEvent.WINDOW_BLUR, () => {
-      console.log("window blur");
-
-      setStart(null);
-      setRect(null);
-      onBlur?.();
+      flushSync(() => {
+        setStart(null);
+        setRect(null);
+        onBlur?.();
+      });
     });
+
+    return () => {
+      removeListenerPromise.then((removeListener) => removeListener());
+    };
   }, []);
 
   return (

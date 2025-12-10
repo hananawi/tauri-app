@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ocr::setup_mask;
 
@@ -19,12 +19,16 @@ impl AppState {
 
       match app.get_webview_window("clip") {
         Some(window) => {
+          app.emit("window-will-show", ()).unwrap();
+
           window.show().unwrap();
           window.set_focus().unwrap();
         }
         None => eprintln!("get window by label \"clip\" failed"),
       }
     } else {
+      app.emit("window-will-hide", ()).unwrap();
+
       app.get_webview_window("clip").unwrap().hide().unwrap();
     }
   }

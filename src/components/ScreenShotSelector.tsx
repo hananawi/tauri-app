@@ -6,6 +6,7 @@ import { flushSync } from "react-dom";
 import { Group, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
 import { useEventListener } from "usehooks-ts";
+import { copyText } from "../lib/commands";
 import { DetectionResultItem } from "../types/clip";
 
 type Selection = { x: number; y: number; width: number; height: number };
@@ -127,11 +128,28 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
           <Group x={rect.x} y={rect.y}>
             {detectedItems.map((item) => (
               <Html groupProps={{ x: item.rect.x, y: item.rect.y }}>
-                <div className="bg-white">{item.text}</div>
+                <div className="bg-white p-2">{item.text}</div>
               </Html>
             ))}
           </Group>
         ) : null}
+
+        {rect && detectedItems && detectedItems.length > 0 && (
+          <Group x={rect.x} y={rect.y + rect.height + 8}>
+            <Html>
+              <div className="flex gap-2 px-2 py-1 bg-black/70 rounded-md">
+                <button
+                  onClick={() =>
+                    copyText(detectedItems.map((i) => i.text).join("\n"))
+                  }
+                  className="text-white bg-transparent border-none cursor-pointer text-sm"
+                >
+                  复制文字
+                </button>
+              </div>
+            </Html>
+          </Group>
+        )}
       </Layer>
 
       {/* for border */}

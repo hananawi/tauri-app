@@ -66,46 +66,13 @@ pub struct DetectionResultItem {
   rect: Rect,
 }
 
-fn get_ocr_singleton() -> &'static Ocr {
+pub fn get_ocr_singleton() -> &'static Ocr {
   OCR_INSTANCE.get_or_init(|| {
     Ocr::new(OcrOptions {
       // target_languages: vec!["en-US", "zh-Hans", "ja-JP"],
       target_languages: vec!["ja-JP"],
     })
   })
-}
-
-#[tauri::command]
-pub async fn detect_text(
-  rect: Option<Rect>,
-) -> Result<Vec<DetectionResultItem>, String> {
-  println!("ocr start");
-
-  let ocr = get_ocr_singleton();
-  let rect = rect.unwrap();
-
-  let detect_result_vec = ocr.detect_text(rect);
-
-  println!("ocr end {detect_result_vec:#?}");
-  Ok(detect_result_vec)
-}
-
-#[tauri::command]
-pub async fn capture_screen(rect: Option<Rect>) -> Result<(), String> {
-  let ocr = get_ocr_singleton();
-
-  let rect = rect.unwrap();
-  let Rect {
-    x,
-    y,
-    width,
-    height,
-  } = rect;
-  let rect: CGRect = CGRect::new(CGPoint { x, y }, CGSize { width, height });
-
-  ocr.capture_screen(rect);
-
-  Ok(())
 }
 
 pub use utils::setup_mask;

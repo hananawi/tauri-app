@@ -34,6 +34,5 @@ pub async fn gen_audio_from_text(
     .map_err(|e| e.to_string())?;
 
   println!("request sent");
-  // println!("response received with resBody: {res_body:#?}");
   std::fs::write("audio.wav", &audio_bytes).map_err(|e| e.to_string())
 }

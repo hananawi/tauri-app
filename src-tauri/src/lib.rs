@@ -1,9 +1,8 @@
+mod commands;
 mod http_client;
 mod init_app;
-mod llm;
 mod ocr;
-mod splashscreen;
-mod store;
+mod state;
 
 use std::sync::Mutex;
 
@@ -12,8 +11,7 @@ use tauri_plugin_log::{
   TargetKind as LogTargetKind,
 };
 
-use crate::{http_client::*, llm::*, ocr::*, store::*};
-// use crate::splashscreen::*;
+use crate::{commands::*, http_client::*, state::*};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,16 +30,12 @@ pub fn run() {
         .build(),
     )
     .invoke_handler(tauri::generate_handler![
-      // greet,
-      // set_complete,
       detect_text,
       capture_screen,
-      gen_audio_from_text
+      gen_audio_from_text,
+      copy_text
     ])
     .setup(|app| {
-      // spawn(setup(app.handle().clone()));
-      // spawn(setup_mask(app.handle().clone()));
-
       init_app::init_app(app)?;
 
       Ok(())

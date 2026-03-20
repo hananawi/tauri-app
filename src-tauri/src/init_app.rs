@@ -9,7 +9,7 @@ use tauri::{
   Manager,
 };
 
-use crate::store::AppState;
+use crate::state::AppState;
 
 pub fn init_app(
   app: &mut tauri::App,

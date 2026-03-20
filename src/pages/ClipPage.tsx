@@ -1,14 +1,13 @@
-import { invoke } from "@tauri-apps/api/core";
 import { info } from "@tauri-apps/plugin-log";
 import { useState } from "react";
 import {
   ScreenShotSelector,
   PropsType as ScreenShotSelectorPropsType,
 } from "../components/ScreenShotSelector";
+import { captureScreen, detectText, genAudioFromText } from "../lib/commands";
 import { DetectionResultItem } from "../types/clip";
 
 export const ClipPage = () => {
-  // const [textVec, setTextVec] = useState<string[]>([]);
   const [detectedItems, setDetectedItems] = useState<DetectionResultItem[]>([]);
 
   const handleFinish: ScreenShotSelectorPropsType["onFinish"] = async (
@@ -18,17 +17,12 @@ export const ClipPage = () => {
       `info ScreenShotSelector finished, rect: ${JSON.stringify(rect, null, 2)}`
     );
 
-    // Call backend OCR with the selected rect
-    const results = await invoke<DetectionResultItem[]>("detect_text", {
-      rect,
-    });
-    invoke("capture_screen", { rect });
+    const results = await detectText(rect);
+    captureScreen(rect);
 
     info(`Detected text: ${JSON.stringify(results, null, 2)}`);
     setDetectedItems(results);
-    invoke("gen_audio_from_text", {
-      text: results.map((item) => item.text).join(" "),
-    });
+    genAudioFromText(results.map((item) => item.text).join(" "));
   };
 
   return (

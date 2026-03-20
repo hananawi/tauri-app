@@ -12,7 +12,7 @@ use tauri_plugin_log::{
   TargetKind as LogTargetKind,
 };
 
-use crate::{http_client::*, ocr::*, store::*};
+use crate::{http_client::*, llm::*, ocr::*, store::*};
 // use crate::splashscreen::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,7 +35,8 @@ pub fn run() {
       // greet,
       // set_complete,
       detect_text,
-      capture_screen
+      capture_screen,
+      gen_audio_from_text
     ])
     .setup(|app| {
       // spawn(setup(app.handle().clone()));

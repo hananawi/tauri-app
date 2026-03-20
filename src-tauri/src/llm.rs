@@ -1,31 +1,39 @@
 use crate::http_client::HttpClient;
-use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use tauri::{Runtime, State};
+use tauri::State;
 
 #[tauri::command]
-async fn gen_audio_from_text<R: Runtime>(
+pub async fn gen_audio_from_text(
   text: String,
   state: State<'_, HttpClient>,
-) -> Result<(), Box<dyn std::error::Error>> {
-  #[derive(Debug, Deserialize, Serialize)]
-  struct ReqBody {}
-  #[derive(Debug, Deserialize, Serialize)]
-  struct ResBody {}
+) -> Result<(), String> {
+  let client = state.client();
 
-  let req_body = ReqBody {};
-
-  let res_body: ResBody = state
-    .client()
-    .post("url")
-    .json(&req_body)
+  let query_json: Value = client
+    .post("https://float-ceremony-enquiry-fully.trycloudflare.com/audio_query")
+    .query(&[("speaker", "1"), ("text", text.as_str())])
     .send()
-    .await?
+    .await
+    .map_err(|e| e.to_string())?
     .json()
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
-  println!("request sent with reqBody: {req_body:#?}");
-  println!("response received with resBody: {res_body:#?}");
+  println!("{query_json:#?}");
 
-  Ok(())
+  let audio_bytes = client
+    .post("https://float-ceremony-enquiry-fully.trycloudflare.com/synthesis")
+    .query(&[("speaker", "1")])
+    .json(&query_json)
+    .send()
+    .await
+    .map_err(|e| e.to_string())?
+    .bytes()
+    .await
+    .map_err(|e| e.to_string())?;
+
+  println!("request sent");
+  // println!("response received with resBody: {res_body:#?}");
+  std::fs::write("audio.wav", &audio_bytes).map_err(|e| e.to_string())
 }

@@ -16,3 +16,7 @@ export async function genAudioFromText(text: string): Promise<void> {
 export async function copyText(text: string): Promise<void> {
   return invoke("copy_text", { text });
 }
+
+export async function stopClipping(): Promise<void> {
+  return invoke("stop_clipping");
+}

@@ -1,14 +1,29 @@
 import { info } from "@tauri-apps/plugin-log";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScreenShotSelector,
   PropsType as ScreenShotSelectorPropsType,
 } from "../components/ScreenShotSelector";
-import { captureScreen, detectText, genAudioFromText } from "../lib/commands";
+import {
+  captureScreen,
+  detectText,
+  genAudioFromText,
+  stopClipping,
+} from "../lib/commands";
 import { DetectionResultItem } from "../types/clip";
 
 export const ClipPage = () => {
   const [detectedItems, setDetectedItems] = useState<DetectionResultItem[]>([]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        stopClipping();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleFinish: ScreenShotSelectorPropsType["onFinish"] = async (
     rect

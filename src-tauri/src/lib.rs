@@ -33,7 +33,8 @@ pub fn run() {
       detect_text,
       capture_screen,
       gen_audio_from_text,
-      copy_text
+      copy_text,
+      stop_clipping
     ])
     .setup(|app| {
       init_app::init_app(app)?;

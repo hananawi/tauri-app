@@ -33,10 +33,9 @@ pub fn init_app(
 
     let clip_shortcut =
       Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
-    let escape_shortcut = Shortcut::new(None, Code::Escape);
     app.handle().plugin(
       tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts([clip_shortcut, escape_shortcut])
+        .with_shortcuts([clip_shortcut])
         .unwrap()
         .with_handler(move |app, shortcut, event| {
           println!("shortcut pressed {shortcut:?}");
@@ -49,10 +48,6 @@ pub fn init_app(
               if shortcut == &clip_shortcut {
                 if !state.is_clipping {
                   state.set_is_clipping(app, true);
-                }
-              } else if shortcut == &escape_shortcut {
-                if state.is_clipping {
-                  state.set_is_clipping(app, false);
                 }
               }
             }

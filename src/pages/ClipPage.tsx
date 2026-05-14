@@ -6,10 +6,13 @@ import {
 } from "../components/ScreenShotSelector";
 import {
   captureScreen,
+  captureToTemp,
   detectText,
   genAudioFromText,
+  openLlmResultWindow,
   stopClipping,
 } from "../lib/commands";
+import { getRecognitionMode } from "../lib/settings";
 import { DetectionResultItem } from "../types/clip";
 
 export const ClipPage = () => {
@@ -31,6 +34,15 @@ export const ClipPage = () => {
     info(
       `info ScreenShotSelector finished, rect: ${JSON.stringify(rect, null, 2)}`
     );
+
+    const mode = await getRecognitionMode();
+
+    if (mode === "llm") {
+      await captureToTemp(rect);
+      await openLlmResultWindow();
+      stopClipping();
+      return;
+    }
 
     const results = await detectText(rect);
     captureScreen(rect);

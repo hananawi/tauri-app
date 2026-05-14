@@ -90,7 +90,10 @@ pub fn init_app(
 
   let quit_item = MenuItem::with_id(app, "quit", "&Quit", true, None::<&str>)?;
   let clip_item = MenuItem::with_id(app, "clip", "&Clip", true, None::<&str>)?;
-  let menu = Menu::with_items(app, &[&clip_item, &quit_item])?;
+  let settings_item =
+    MenuItem::with_id(app, "settings", "&Settings", true, None::<&str>)?;
+  let menu =
+    Menu::with_items(app, &[&clip_item, &settings_item, &quit_item])?;
 
   TrayIconBuilder::new()
     .menu(&menu)
@@ -116,6 +119,11 @@ pub fn init_app(
         let is_clipping = state.is_clipping;
         if !is_clipping {
           state.set_is_clipping(app, true);
+        }
+      }
+      "settings" => {
+        if let Err(err) = crate::commands::show_window(app, "settings") {
+          eprintln!("{err}");
         }
       }
       _ => {}

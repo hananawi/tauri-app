@@ -1,6 +1,8 @@
 import { Route, Routes } from "react-router-dom";
 import "./App.css";
 import { ClipPage } from "./pages/ClipPage";
+import { LlmResultPage } from "./pages/LlmResultPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function App() {
   return (
@@ -8,6 +10,8 @@ function App() {
       <Routes>
         <Route path="/" element={<ClipPage />} />
         <Route path="/clip" element={<ClipPage />} />
+        <Route path="/llm-result" element={<LlmResultPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </div>
   );

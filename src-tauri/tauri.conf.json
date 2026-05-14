@@ -25,6 +25,29 @@
         "skipTaskbar": true,
         "backgroundColor": "#00000000",
         "visible": false
+      },
+      {
+        "title": "识别结果",
+        "label": "llm-result",
+        "url": "/llm-result",
+        "width": 480,
+        "height": 600,
+        "resizable": true,
+        "decorations": true,
+        "alwaysOnTop": true,
+        "center": true,
+        "visible": false
+      },
+      {
+        "title": "设置",
+        "label": "settings",
+        "url": "/settings",
+        "width": 520,
+        "height": 580,
+        "resizable": false,
+        "decorations": true,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

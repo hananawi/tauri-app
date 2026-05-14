@@ -20,6 +20,7 @@ pub fn run() {
     .manage(HttpClient::new())
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_store::Builder::new().build())
     .plugin(
       LogBuilder::default()
         .targets([
@@ -34,8 +35,24 @@ pub fn run() {
       capture_screen,
       gen_audio_from_text,
       copy_text,
-      stop_clipping
+      stop_clipping,
+      capture_to_temp,
+      take_pending_capture,
+      ask_llm_about_image,
+      open_llm_result_window,
+      open_settings_window
     ])
+    .on_window_event(|window, event| {
+      // settings / llm-result 窗口点红叉时隐藏而非销毁，
+      // 否则下次再 get_webview_window 会找不到。
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        let label = window.label();
+        if label == "settings" || label == "llm-result" {
+          api.prevent_close();
+          let _ = window.hide();
+        }
+      }
+    })
     .setup(|app| {
       init_app::init_app(app)?;
 

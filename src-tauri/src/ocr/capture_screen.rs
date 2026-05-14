@@ -9,16 +9,17 @@ use objc2_core_foundation::CGRect;
 use objc2_core_graphics::{
   CGImage, CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess,
 };
-use objc2_foundation::{NSDictionary, NSError};
+use objc2_foundation::{NSData, NSDictionary, NSError};
 use objc2_screen_capture_kit::SCScreenshotManager;
 
 use super::Ocr;
 
 impl Ocr {
-  pub fn capture_screen(&self, rect: CGRect) {
-    ensure_screen_permission().unwrap();
+  /// 截取指定区域，返回 PNG 编码后的字节。
+  pub fn capture_screen_png(&self, rect: CGRect) -> Result<Vec<u8>, String> {
+    ensure_screen_permission().map_err(|e| e.to_string())?;
 
-    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+    let (tx, rx) = mpsc::channel::<Result<Vec<u8>, String>>();
 
     unsafe {
       let completion_tx = tx.clone();
@@ -55,17 +56,7 @@ impl Ocr {
             return;
           };
 
-          let pasteboard = NSPasteboard::generalPasteboard();
-          pasteboard.clearContents();
-
-          if !pasteboard.setData_forType(Some(&png_data), NSPasteboardTypePNG) {
-            eprintln!("Failed to write screenshot data to pasteboard");
-            let _ =
-              completion_tx.send(Err("截图失败：无法写入剪切板".to_string()));
-            return;
-          }
-
-          let _ = completion_tx.send(Ok(()));
+          let _ = completion_tx.send(Ok(png_data.to_vec()));
         });
 
       SCScreenshotManager::captureImageInRect_completionHandler(
@@ -75,10 +66,30 @@ impl Ocr {
     }
 
     match rx.recv() {
-      Ok(Ok(())) => (),
-      Ok(Err(err)) => eprintln!("{err}"),
+      Ok(result) => result,
       Err(recv_err) => {
-        eprintln!("Failed to receive screenshot result: {recv_err}")
+        Err(format!("Failed to receive screenshot result: {recv_err}"))
+      }
+    }
+  }
+
+  /// 截图并写入系统剪贴板。
+  pub fn capture_screen(&self, rect: CGRect) {
+    let png_data = match self.capture_screen_png(rect) {
+      Ok(data) => data,
+      Err(err) => {
+        eprintln!("{err}");
+        return;
+      }
+    };
+
+    unsafe {
+      let ns_data = NSData::with_bytes(&png_data);
+      let pasteboard = NSPasteboard::generalPasteboard();
+      pasteboard.clearContents();
+
+      if !pasteboard.setData_forType(Some(&ns_data), NSPasteboardTypePNG) {
+        eprintln!("截图失败：无法写入剪切板");
       }
     }
   }

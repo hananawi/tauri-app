@@ -85,15 +85,13 @@ impl Ocr {
 }
 
 fn ensure_screen_permission() -> Result<(), &'static str> {
-  unsafe {
-    if !CGPreflightScreenCaptureAccess() {
-      println!(
-                    "Requesting Screen Recording permission...\n> System Settings → Privacy & Security → Screen & System Audio Recording → enable your terminal (e.g., Terminal/iTerm) → restart this app"
-                );
-      CGRequestScreenCaptureAccess();
+  if !CGPreflightScreenCaptureAccess() {
+    println!(
+                  "Requesting Screen Recording permission...\n> System Settings → Privacy & Security → Screen & System Audio Recording → enable your terminal (e.g., Terminal/iTerm) → restart this app"
+              );
+    CGRequestScreenCaptureAccess();
 
-      return Err("Permission not granted yet. Please grant and re-run.");
-    }
+    return Err("Permission not granted yet. Please grant and re-run.");
   }
 
   Ok(())

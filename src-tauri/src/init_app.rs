@@ -60,7 +60,32 @@ pub fn init_app(
 
   #[cfg(target_os = "macos")]
   {
+    use core::ptr::NonNull;
+
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSEvent, NSEventMask};
+
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+    // tray-icon 在状态栏按钮上盖了一层自定义 NSView 来捕获鼠标事件。
+    // accessory app 平时处于非活跃状态，第一次点击会同时触发「激活 app」
+    // 和「弹出菜单」，激活动作会把刚弹出的菜单立刻关掉（表现为闪一下）。
+    // 装一个本地鼠标监听，在事件派发到状态栏之前抢先激活 app，菜单就能正常停留。
+    if let Some(mtm) = MainThreadMarker::new() {
+      let handler =
+        RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+          NSApplication::sharedApplication(mtm).activate();
+          event.as_ptr()
+        });
+      let monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
+          NSEventMask::LeftMouseDown,
+          &handler,
+        )
+      };
+      // 监听需要存活整个 app 生命周期
+      std::mem::forget(monitor);
+    }
   }
 
   let quit_item = MenuItem::with_id(app, "quit", "&Quit", true, None::<&str>)?;
@@ -71,7 +96,7 @@ pub fn init_app(
     .menu(&menu)
     .icon(app.default_window_icon().unwrap().clone())
     .show_menu_on_left_click(true)
-    .on_tray_icon_event(|tray, event| match event {
+    .on_tray_icon_event(|_tray, event| match event {
       TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Down,

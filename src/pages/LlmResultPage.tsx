@@ -1,5 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { askLlmAboutImage, takePendingCapture } from "../lib/commands";
 import {
   getAnthropicAuthToken,
@@ -7,6 +9,7 @@ import {
   getClaudeCliPath,
   getLlmProvider,
   getPresetPrompt,
+  getSessionDir,
 } from "../lib/settings";
 
 type Status = "idle" | "loading" | "streaming" | "done" | "error";
@@ -37,12 +40,13 @@ export const LlmResultPage = () => {
       setError("");
       setStatus("loading");
       try {
-        const [provider, baseUrl, authToken, cliPath, prompt] =
+        const [provider, baseUrl, authToken, cliPath, sessionDir, prompt] =
           await Promise.all([
             getLlmProvider(),
             getAnthropicBaseUrl(),
             getAnthropicAuthToken(),
             getClaudeCliPath(),
+            getSessionDir(),
             getPresetPrompt(),
           ]);
         await askLlmAboutImage({
@@ -52,6 +56,7 @@ export const LlmResultPage = () => {
           baseUrl,
           authToken,
           cliPath,
+          sessionDir,
         });
       } catch (e) {
         setError(String(e));
@@ -108,8 +113,8 @@ export const LlmResultPage = () => {
             {error}
           </div>
         ) : text ? (
-          <div className="text-sm leading-relaxed whitespace-pre-wrap">
-            {text}
+          <div className="prose prose-sm prose-neutral max-w-none prose-pre:bg-neutral-100 prose-pre:text-neutral-800">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
           </div>
         ) : (
           <div className="text-sm text-neutral-400">

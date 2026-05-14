@@ -36,6 +36,7 @@ export async function askLlmAboutImage(args: {
   baseUrl: string;
   authToken: string;
   cliPath: string;
+  sessionDir: string;
 }): Promise<void> {
   return invoke("ask_llm_about_image", args);
 }

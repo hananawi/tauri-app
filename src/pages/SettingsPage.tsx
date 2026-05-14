@@ -6,6 +6,7 @@ import {
   getLlmProvider,
   getPresetPrompt,
   getRecognitionMode,
+  getSessionDir,
   LlmProvider,
   RecognitionMode,
   setAnthropicAuthToken,
@@ -14,6 +15,7 @@ import {
   setLlmProvider,
   setPresetPrompt,
   setRecognitionMode,
+  setSessionDir,
 } from "../lib/settings";
 
 const MODE_OPTIONS: { value: RecognitionMode; label: string; desc: string }[] =
@@ -50,6 +52,7 @@ export const SettingsPage = () => {
   const [baseUrl, setBaseUrl] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [cliPath, setCliPath] = useState("");
+  const [sessionDir, setSessionDirState] = useState("");
   const [prompt, setPrompt] = useState("");
 
   useEffect(() => {
@@ -58,6 +61,7 @@ export const SettingsPage = () => {
     void getAnthropicBaseUrl().then(setBaseUrl);
     void getAnthropicAuthToken().then(setAuthToken);
     void getClaudeCliPath().then(setCliPath);
+    void getSessionDir().then(setSessionDirState);
     void getPresetPrompt().then(setPrompt);
   }, []);
 
@@ -81,6 +85,10 @@ export const SettingsPage = () => {
 
   const handleCliPathBlur = async () => {
     await setClaudeCliPath(cliPath.trim());
+  };
+
+  const handleSessionDirBlur = async () => {
+    await setSessionDir(sessionDir.trim());
   };
 
   const handlePromptBlur = async () => {
@@ -170,6 +178,23 @@ export const SettingsPage = () => {
               <p className="text-xs text-neutral-400">
                 GUI 应用不继承终端 PATH，建议填写 claude 的绝对路径（which
                 claude 可查看）。
+              </p>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  会话目录
+                </span>
+                <input
+                  type="text"
+                  value={sessionDir}
+                  onChange={(e) => setSessionDirState(e.target.value)}
+                  onBlur={handleSessionDirBlur}
+                  placeholder="tachibana-capture"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <p className="text-xs text-neutral-400">
+                claude -p 的工作目录，决定会话记录落在
+                ~/.claude/projects/ 下哪个目录。填相对名（如 tachibana-capture）则放在用户主目录下，也可填绝对路径。
               </p>
             </>
           ) : (

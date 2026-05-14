@@ -5,7 +5,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_log::log;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 use crate::http_client::HttpClient;
 use crate::ocr::{get_ocr_singleton, Rect};
@@ -81,6 +81,7 @@ pub async fn ask_llm_about_image(
   base_url: String,
   auth_token: String,
   cli_path: String,
+  session_dir: String,
   app: AppHandle,
   http: State<'_, HttpClient>,
 ) -> Result<(), String> {
@@ -88,7 +89,7 @@ pub async fn ask_llm_about_image(
     "[llm] 收到问答请求，provider={provider}，图片：{image_path}"
   );
   let result = if provider == "cli" {
-    stream_llm_cli(&image_path, &prompt, &cli_path, &app).await
+    stream_llm_cli(&image_path, &prompt, &cli_path, &session_dir, &app).await
   } else {
     stream_llm(&image_path, &prompt, &base_url, &auth_token, &app, &http)
       .await
@@ -109,11 +110,36 @@ async fn stream_llm_cli(
   image_path: &str,
   prompt: &str,
   cli_path: &str,
+  session_dir: &str,
   app: &AppHandle,
 ) -> Result<(), String> {
   if !std::path::Path::new(image_path).exists() {
     return Err(format!("截图文件不存在：{image_path}"));
   }
+
+  // 解析会话目录：决定 claude -p 子进程的工作目录，进而决定
+  // 会话记录落在 ~/.claude/projects/ 下哪个目录。
+  // 绝对路径按原样使用；相对名（如 tachibana-capture）放到用户主目录下。
+  let session_dir = session_dir.trim();
+  let session_dir = if session_dir.is_empty() {
+    "tachibana-capture"
+  } else {
+    session_dir
+  };
+  let session_path = {
+    let p = std::path::Path::new(session_dir);
+    if p.is_absolute() {
+      p.to_path_buf()
+    } else {
+      app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("无法定位用户主目录：{e}"))?
+        .join(p)
+    }
+  };
+  std::fs::create_dir_all(&session_path)
+    .map_err(|e| format!("创建会话目录失败（{}）：{e}", session_path.display()))?;
 
   // 解析路径字段：允许前置 KEY=VALUE 环境变量，之后是可执行文件及额外参数。
   // 例如：http_proxy=http://localhost:7890 claude
@@ -139,18 +165,26 @@ async fn stream_llm_cli(
   );
 
   log::info!(
-    "[llm] 启动 Claude Code CLI：{program} {} -p（{} 个环境变量）",
+    "[llm] 启动 Claude Code CLI：{program} {} -p（{} 个环境变量，工作目录 {}）",
     extra_args.join(" "),
-    envs.len()
+    envs.len(),
+    session_path.display()
   );
   let mut cmd = tokio::process::Command::new(program);
+  cmd.current_dir(&session_path);
   for (k, v) in &envs {
     cmd.env(k, v);
   }
+  // stream-json + --include-partial-messages：让 CLI 按行输出 JSONL，
+  // 其中包含逐 token 的 content_block_delta 增量事件，实现真正的流式。
   let mut child = cmd
     .args(&extra_args)
     .arg("-p")
     .arg(&full_prompt)
+    .arg("--output-format")
+    .arg("stream-json")
+    .arg("--verbose")
+    .arg("--include-partial-messages")
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped())
     .spawn()
@@ -161,20 +195,60 @@ async fn stream_llm_cli(
   let stdout = child.stdout.take().ok_or("无法获取 CLI 标准输出")?;
   let mut stderr = child.stderr.take().ok_or("无法获取 CLI 标准错误")?;
 
-  let mut reader = tokio::io::BufReader::new(stdout);
-  let mut buf = [0u8; 4096];
-  let mut chunk_count = 0usize;
-  loop {
-    let n = reader
-      .read(&mut buf)
-      .await
-      .map_err(|e| format!("读取 CLI 输出失败：{e}"))?;
-    if n == 0 {
-      break;
+  let mut lines = tokio::io::BufReader::new(stdout).lines();
+  let mut delta_count = 0usize;
+  while let Some(line) = lines
+    .next_line()
+    .await
+    .map_err(|e| format!("读取 CLI 输出失败：{e}"))?
+  {
+    let line = line.trim();
+    if line.is_empty() {
+      continue;
     }
-    chunk_count += 1;
-    let text = String::from_utf8_lossy(&buf[..n]).to_string();
-    let _ = app.emit("llm-result:chunk", text);
+    let Ok(json) = serde_json::from_str::<Value>(line) else {
+      continue;
+    };
+
+    match json.get("type").and_then(|t| t.as_str()) {
+      // 逐 token 增量事件（来自 --include-partial-messages）。
+      Some("stream_event") => {
+        if let Some(text) = json
+          .get("event")
+          .filter(|e| {
+            e.get("type").and_then(|t| t.as_str())
+              == Some("content_block_delta")
+          })
+          .and_then(|e| e.get("delta"))
+          .filter(|d| {
+            d.get("type").and_then(|t| t.as_str()) == Some("text_delta")
+          })
+          .and_then(|d| d.get("text"))
+          .and_then(|t| t.as_str())
+        {
+          delta_count += 1;
+          let _ = app.emit("llm-result:chunk", text);
+        }
+      }
+      // 最终结果：报错时返回错误；若没收到任何增量则用完整文本兜底。
+      Some("result") => {
+        let is_error =
+          json.get("is_error").and_then(|b| b.as_bool()).unwrap_or(false);
+        let result_text =
+          json.get("result").and_then(|r| r.as_str()).unwrap_or("");
+        if is_error {
+          return Err(if result_text.is_empty() {
+            "CLI 返回错误".to_string()
+          } else {
+            result_text.to_string()
+          });
+        }
+        if delta_count == 0 && !result_text.is_empty() {
+          let _ = app.emit("llm-result:chunk", result_text);
+        }
+      }
+      _ => {}
+    }
   }
 
   let status = child
@@ -191,7 +265,7 @@ async fn stream_llm_cli(
     ));
   }
 
-  log::info!("[llm] CLI 流程结束，共 {chunk_count} 段输出");
+  log::info!("[llm] CLI 流程结束，共 {delta_count} 段增量输出");
   let _ = app.emit("llm-result:done", ());
   Ok(())
 }

@@ -9,12 +9,14 @@ const LLM_PROVIDER_KEY = "llmProvider";
 const ANTHROPIC_BASE_URL_KEY = "anthropicBaseUrl";
 const ANTHROPIC_AUTH_TOKEN_KEY = "anthropicAuthToken";
 const CLAUDE_CLI_PATH_KEY = "claudeCliPath";
+const SESSION_DIR_KEY = "sessionDir";
 const PRESET_PROMPT_KEY = "presetPrompt";
 
 const DEFAULT_MODE: RecognitionMode = "llm";
 const DEFAULT_PROVIDER: LlmProvider = "api";
 const DEFAULT_BASE_URL = "https://idealab.alibaba-inc.com/api/anthropic";
 const DEFAULT_CLI_PATH = "claude";
+const DEFAULT_SESSION_DIR = "tachibana-capture";
 
 const store = new LazyStore("settings.json");
 
@@ -47,6 +49,16 @@ export async function getClaudeCliPath(): Promise<string> {
 
 export async function setClaudeCliPath(path: string): Promise<void> {
   await store.set(CLAUDE_CLI_PATH_KEY, path);
+  await store.save();
+}
+
+export async function getSessionDir(): Promise<string> {
+  const dir = await store.get<string>(SESSION_DIR_KEY);
+  return dir ?? DEFAULT_SESSION_DIR;
+}
+
+export async function setSessionDir(dir: string): Promise<void> {
+  await store.set(SESSION_DIR_KEY, dir);
   await store.save();
 }
 

@@ -8,7 +8,7 @@ use tauri_plugin_log::log;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 use crate::http_client::HttpClient;
-use crate::ocr::{get_ocr_singleton, Rect};
+use crate::ocr::{self, Rect};
 use crate::state::AppState;
 
 // base_url / auth_token 由前端从设置中读取并传入。
@@ -33,7 +33,7 @@ pub async fn capture_to_temp(
 ) -> Result<String, String> {
   let rect = rect.ok_or("缺少截图区域")?;
   log::info!("[llm] 开始截图，区域 {rect:?}");
-  let png = get_ocr_singleton().capture_screen_png(rect.to_cg_rect())?;
+  let png = ocr::capture_screen_png(rect)?;
   log::info!("[llm] 截图完成，PNG {} 字节", png.len());
 
   let dir = app

@@ -1,93 +1,79 @@
 use std::sync::Mutex;
 
-use block2::RcBlock;
-use objc2::AnyThread;
-use objc2_vision::VNRecognizeTextRequest;
 use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
   Manager,
 };
 
+use crate::ocr;
 use crate::state::AppState;
 
 pub fn init_app(
   app: &mut tauri::App,
 ) -> Result<(), Box<dyn std::error::Error>> {
-  unsafe {
-    let ocr_req = VNRecognizeTextRequest::initWithCompletionHandler(
-      VNRecognizeTextRequest::alloc(),
-      RcBlock::as_ptr(&RcBlock::new(|_req, _error| {})),
-    );
-    println!(
-      "supported languages: {:#?}",
-      ocr_req.supportedRecognitionLanguagesAndReturnError()
-    );
-  }
+  // 预热平台 OCR 引擎（mac: 加载 Vision 语言模型；win: no-op）。
+  ocr::warmup();
 
   #[cfg(desktop)]
-  {
-    use tauri_plugin_global_shortcut::{
-      Code, Modifiers, Shortcut, ShortcutState,
-    };
-
-    let clip_shortcut =
-      Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
-    app.handle().plugin(
-      tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts([clip_shortcut])
-        .unwrap()
-        .with_handler(move |app, shortcut, event| {
-          println!("shortcut pressed {shortcut:?}");
-
-          match event.state() {
-            ShortcutState::Released => {
-              let state = app.state::<Mutex<AppState>>();
-              let mut state = state.lock().unwrap();
-
-              if shortcut == &clip_shortcut {
-                if !state.is_clipping {
-                  state.set_is_clipping(app, true);
-                }
-              }
-            }
-            _ => {}
-          }
-        })
-        .build(),
-    )?;
-  }
+  register_global_shortcut(app)?;
 
   #[cfg(target_os = "macos")]
-  {
-    use core::ptr::NonNull;
+  setup_macos_specific(app);
 
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSEvent, NSEventMask};
+  build_tray(app)?;
 
-    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+  Ok(())
+}
 
-    // tray-icon 在状态栏按钮上盖了一层自定义 NSView 来捕获鼠标事件。
-    // accessory app 平时处于非活跃状态，第一次点击会同时触发「激活 app」
-    // 和「弹出菜单」，激活动作会把刚弹出的菜单立刻关掉（表现为闪一下）。
-    // 装一个本地鼠标监听，在事件派发到状态栏之前抢先激活 app，菜单就能正常停留。
-    if let Some(mtm) = MainThreadMarker::new() {
-      let handler =
-        RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
-          NSApplication::sharedApplication(mtm).activate();
-          event.as_ptr()
-        });
-      let monitor = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-          NSEventMask::LeftMouseDown,
-          &handler,
-        )
-      };
-      // 监听需要存活整个 app 生命周期
-      std::mem::forget(monitor);
-    }
-  }
+#[cfg(desktop)]
+fn register_global_shortcut(
+  app: &mut tauri::App,
+) -> Result<(), Box<dyn std::error::Error>> {
+  use tauri_plugin_global_shortcut::{
+    Code, Modifiers, Shortcut, ShortcutState,
+  };
 
+  // 主修饰键在两个平台语义不一致：
+  // mac 上 SUPER = Cmd（用户习惯），Windows 上 SUPER = Win 键（会和系统截图抢）。
+  // 因此 Windows 走 Ctrl，mac 走 Cmd，都叠 Shift+R。
+  #[cfg(target_os = "macos")]
+  let primary_mod = Modifiers::SUPER | Modifiers::SHIFT;
+  #[cfg(not(target_os = "macos"))]
+  let primary_mod = Modifiers::CONTROL | Modifiers::SHIFT;
+
+  let clip_shortcut = Shortcut::new(Some(primary_mod), Code::KeyR);
+
+  app.handle().plugin(
+    tauri_plugin_global_shortcut::Builder::new()
+      .with_shortcuts([clip_shortcut])?
+      .with_handler(move |app, shortcut, event| {
+        println!("shortcut pressed {shortcut:?}");
+        if matches!(event.state(), ShortcutState::Released)
+          && shortcut == &clip_shortcut
+        {
+          let state = app.state::<Mutex<AppState>>();
+          let mut state = state.lock().unwrap();
+          if !state.is_clipping {
+            state.set_is_clipping(app, true);
+          }
+        }
+      })
+      .build(),
+  )?;
+  Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn setup_macos_specific(app: &mut tauri::App) {
+  // 让 app 不出现在 Dock，只以托盘形式存在。
+  app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+  // 修首次点击托盘菜单闪烁的问题（accessory app 特有）。
+  ocr::install_tray_click_fix();
+}
+
+fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
   let quit_item = MenuItem::with_id(app, "quit", "&Quit", true, None::<&str>)?;
   let clip_item = MenuItem::with_id(app, "clip", "&Clip", true, None::<&str>)?;
   let settings_item =
@@ -99,16 +85,14 @@ pub fn init_app(
     .menu(&menu)
     .icon(app.default_window_icon().unwrap().clone())
     .show_menu_on_left_click(true)
-    .on_tray_icon_event(|_tray, event| match event {
-      TrayIconEvent::Click {
+    .on_tray_icon_event(|_tray, event| {
+      if let TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Down,
         ..
-      } => {
+      } = event
+      {
         println!("left click pressed and released");
-      }
-      _ => {
-        // println!("unhandled event {event:?}");
       }
     })
     .on_menu_event(|app, event| match event.id.as_ref() {
@@ -116,8 +100,7 @@ pub fn init_app(
       "clip" => {
         let state = app.state::<Mutex<AppState>>();
         let mut state = state.lock().unwrap();
-        let is_clipping = state.is_clipping;
-        if !is_clipping {
+        if !state.is_clipping {
           state.set_is_clipping(app, true);
         }
       }

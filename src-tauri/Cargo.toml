@@ -17,13 +17,25 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# 跨平台依赖：mac / windows 通用
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
+tauri-plugin-global-shortcut = "2.3.1"
+tauri-plugin-http = { version = "2", features = ["json"] }
+tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.47.1", features = ["time", "process", "io-util"] }
+base64 = "0.22"
+rodio = "0.21.1"
+uuid = { version = "1", features = ["v4"] }
+# 跨平台剪贴板（mac 走 NSPasteboard，win 走 Win32），替代手写 objc 调用
+arboard = "3"
+
+# macOS 专属：Apple 私有 / 系统框架绑定，Windows 上不解析
+[target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.1"
 objc2 = "0.6.2"
 objc2-app-kit = { version = "0.3.1", features = ["NSEvent", "NSScreen", "NSApplication", "block2"] }
@@ -32,11 +44,8 @@ objc2-core-graphics = "0.3.1"
 objc2-foundation = { version = "0.3.1", features = ["NSString", "NSArray", "NSData"] }
 objc2-screen-capture-kit = "0.3.1"
 objc2-vision = "0.3.1"
-dispatch2 = "0.3.0"
-tauri-plugin-global-shortcut = "2.3.1"
-tauri-plugin-http = { version = "2", features = ["json"] }
-tauri-plugin-store = "2"
-base64 = "0.22"
-rodio = "0.21.1"
-uuid = { version = "1", features = ["v4"] }
 
+# Windows 专属：截图给 LLM 用（OCR 走云端大模型，不接 WinRT OCR）
+[target.'cfg(target_os = "windows")'.dependencies]
+xcap = "0.0.14"
+image = "0.25"

@@ -15,6 +15,16 @@ use crate::state::AppState;
 // idealab 网关仅支持 claude-opus-4-6 / claude-opus-4-7。
 const LLM_MODEL: &str = "claude-opus-4-7";
 
+// 下列常量复刻 Claude Code CLI 2.1.143 的请求 header，
+// 让走 API 的请求与本机 `claude -p` 子进程发出的请求在 HTTP 层尽量一致，
+// 便于复用同一套网关侧灰度/审计策略，也减少被后端按 header 区分对待的概率。
+// 抓包方式：本地起 http 服务把 ANTHROPIC_BASE_URL 指过去，CC 走 Anthropic SDK
+// （@stainless/anthropic），所有 x-stainless-* 都来自 SDK 自身。
+const CC_USER_AGENT: &str = "claude-cli/2.1.143 (external, sdk-cli)";
+const CC_ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,context-1m-2025-08-07,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advisor-tool-2026-03-01,effort-2025-11-24,afk-mode-2026-01-31,extended-cache-ttl-2025-04-11";
+const CC_STAINLESS_PACKAGE_VERSION: &str = "0.94.0";
+const CC_STAINLESS_RUNTIME_VERSION: &str = "v24.3.0";
+
 #[tauri::command]
 pub async fn capture_to_temp(
   rect: Option<Rect>,
@@ -314,13 +324,29 @@ async fn stream_llm(
   });
 
   let endpoint = format!("{}/v1/messages", base_url.trim_end_matches('/'));
+  // CC 每次请求都会带一个新的 session id，这里同样每请求生成一次。
+  let session_id = uuid::Uuid::new_v4().to_string();
   log::info!("[llm] 请求 {endpoint}，模型 {LLM_MODEL}");
   let client = http.client();
   let mut resp = client
     .post(endpoint)
+    .header("accept", "application/json")
     .header("authorization", format!("Bearer {auth_token}"))
-    .header("anthropic-version", "2023-06-01")
     .header("content-type", "application/json")
+    .header("user-agent", CC_USER_AGENT)
+    .header("x-app", "cli")
+    .header("anthropic-version", "2023-06-01")
+    .header("anthropic-beta", CC_ANTHROPIC_BETA)
+    .header("anthropic-dangerous-direct-browser-access", "true")
+    .header("x-claude-code-session-id", &session_id)
+    .header("x-stainless-arch", "arm64")
+    .header("x-stainless-lang", "js")
+    .header("x-stainless-os", "MacOS")
+    .header("x-stainless-package-version", CC_STAINLESS_PACKAGE_VERSION)
+    .header("x-stainless-retry-count", "0")
+    .header("x-stainless-runtime", "node")
+    .header("x-stainless-runtime-version", CC_STAINLESS_RUNTIME_VERSION)
+    .header("x-stainless-timeout", "600")
     .json(&body)
     .send()
     .await

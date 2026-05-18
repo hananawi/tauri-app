@@ -38,4 +38,5 @@ tauri-plugin-http = { version = "2", features = ["json"] }
 tauri-plugin-store = "2"
 base64 = "0.22"
 rodio = "0.21.1"
+uuid = { version = "1", features = ["v4"] }
 

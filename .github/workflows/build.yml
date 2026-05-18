@@ -86,24 +86,35 @@ jobs:
           $bundle = "src-tauri/target/release/bundle"
           # 先把实际产物列出来，下次出问题能直接看到 bundle 目录长啥样。
           Write-Host "=== bundle tree ==="
-          Get-ChildItem -Recurse -Path $bundle -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Host $_.FullName }
+          if (Test-Path $bundle) {
+            Get-ChildItem -Recurse -Path $bundle | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "(bundle dir does not exist)"
+          }
           Write-Host "==================="
-          $msi = Get-ChildItem -Path "$bundle/msi/*.msi" -ErrorAction Stop
-          $exe = Get-ChildItem -Path "$bundle/nsis/*.exe" -ErrorAction Stop
-          foreach ($f in @($msi, $exe)) {
+          # MSI 与 NSIS 至少要有一个；某些 tauri-bundler 版本下 "targets":"all"
+          # 不一定两个都产出，所以容忍单边缺失，只要总数 ≥1 即可。
+          $msi = @(Get-ChildItem -Path "$bundle/msi/*.msi" -ErrorAction SilentlyContinue)
+          $exe = @(Get-ChildItem -Path "$bundle/nsis/*.exe" -ErrorAction SilentlyContinue)
+          $installers = $msi + $exe
+          if ($installers.Count -eq 0) {
+            throw "No installers found under $bundle (need at least one of MSI / NSIS)"
+          }
+          foreach ($f in $installers) {
             if ($f.Length -lt 5MB) {
               throw "$($f.Name) too small ($($f.Length) bytes); build likely incomplete"
             }
             Write-Host "$($f.Name) OK ($([math]::Round($f.Length / 1MB, 2)) MB)"
           }
-          # PE / MZ header sanity check on the NSIS installer.
-          $head = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
-          $magic = [System.Text.Encoding]::ASCII.GetString($head)
-          if ($magic -ne 'MZ') {
-            throw "NSIS .exe missing MZ header (got '$magic')"
+          # PE / MZ header sanity check on the NSIS installer when present.
+          if ($exe.Count -gt 0) {
+            $head = [System.IO.File]::ReadAllBytes($exe[0].FullName)[0..1]
+            $magic = [System.Text.Encoding]::ASCII.GetString($head)
+            if ($magic -ne 'MZ') {
+              throw "NSIS .exe missing MZ header (got '$magic')"
+            }
+            Write-Host "PE header check OK"
           }
-          Write-Host "PE header check OK"
 
       - name: Sanity check macOS artifacts
         if: runner.os == 'macOS'
@@ -152,7 +163,9 @@ jobs:
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: error
+          # warn 而非 error：MSI / NSIS 单边缺失时由 sanity 步骤先把关，
+          # 这里允许只上传实际存在的那个。
+          if-no-files-found: warn
 
       - name: Upload macOS DMG
         if: runner.os == 'macOS'

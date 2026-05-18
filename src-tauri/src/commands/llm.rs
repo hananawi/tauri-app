@@ -92,17 +92,35 @@ pub async fn ask_llm_about_image(
   auth_token: String,
   cli_path: String,
   session_dir: String,
+  dashscope_base_url: String,
+  dashscope_api_key: String,
+  dashscope_model: String,
   app: AppHandle,
   http: State<'_, HttpClient>,
 ) -> Result<(), String> {
   log::info!(
     "[llm] 收到问答请求，provider={provider}，图片：{image_path}"
   );
-  let result = if provider == "cli" {
-    stream_llm_cli(&image_path, &prompt, &cli_path, &session_dir, &app).await
-  } else {
-    stream_llm(&image_path, &prompt, &base_url, &auth_token, &app, &http)
+  let result = match provider.as_str() {
+    "cli" => {
+      stream_llm_cli(&image_path, &prompt, &cli_path, &session_dir, &app).await
+    }
+    "dashscope" => {
+      stream_llm_dashscope(
+        &image_path,
+        &prompt,
+        &dashscope_base_url,
+        &dashscope_api_key,
+        &dashscope_model,
+        &app,
+        &http,
+      )
       .await
+    }
+    _ => {
+      stream_llm(&image_path, &prompt, &base_url, &auth_token, &app, &http)
+        .await
+    }
   };
   match &result {
     Ok(()) => log::info!("[llm] 问答流程结束"),
@@ -375,6 +393,140 @@ async fn stream_llm(
 
   log::info!("[llm] 流式响应结束，共 {chunk_count} 个文本增量");
   Ok(())
+}
+
+/// 阿里 DashScope OpenAI 兼容模式 (`/compatible-mode/v1`) 的流式调用。
+/// 同样可承载任何其他 OpenAI 兼容的 vision 端点（智谱 GLM-4V、Moonshot、SiliconFlow 等），
+/// 只需把 base_url / model 改成对应值。
+async fn stream_llm_dashscope(
+  image_path: &str,
+  prompt: &str,
+  base_url: &str,
+  api_key: &str,
+  model: &str,
+  app: &AppHandle,
+  http: &HttpClient,
+) -> Result<(), String> {
+  if api_key.is_empty() {
+    return Err("未配置 API Key，请在设置中填写".to_string());
+  }
+  if base_url.is_empty() {
+    return Err("未配置 Base URL，请在设置中填写".to_string());
+  }
+  if model.is_empty() {
+    return Err("未配置模型名，请在设置中填写".to_string());
+  }
+
+  let image_bytes =
+    std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
+  let image_b64 = STANDARD.encode(&image_bytes);
+  log::info!(
+    "[llm] DashScope 读取图片 {} 字节，base64 编码完成",
+    image_bytes.len()
+  );
+
+  let data_url = format!("data:image/png;base64,{image_b64}");
+  let body = json!({
+    "model": model,
+    "stream": true,
+    "messages": [{
+      "role": "user",
+      "content": [
+        { "type": "image_url", "image_url": { "url": data_url } },
+        { "type": "text", "text": prompt }
+      ]
+    }]
+  });
+
+  // 兼容用户在 base URL 里带或不带 /v1 后缀。
+  let trimmed = base_url.trim_end_matches('/');
+  let endpoint = if trimmed.ends_with("/v1") {
+    format!("{trimmed}/chat/completions")
+  } else {
+    format!("{trimmed}/v1/chat/completions")
+  };
+  log::info!("[llm] 请求 DashScope {endpoint}，模型 {model}");
+  let client = http.client();
+  let mut resp = client
+    .post(endpoint)
+    .header("accept", "text/event-stream")
+    .header("authorization", format!("Bearer {api_key}"))
+    .header("content-type", "application/json")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("请求失败：{e}"))?;
+
+  let status = resp.status();
+  log::info!("[llm] DashScope 响应状态 {status}");
+  if !status.is_success() {
+    let text = resp.text().await.unwrap_or_default();
+    return Err(format!("API 返回错误 {status}：{text}"));
+  }
+
+  log::info!("[llm] 开始接收 DashScope 流式响应");
+  let mut buffer = String::new();
+  let mut chunk_count = 0usize;
+  while let Some(chunk) =
+    resp.chunk().await.map_err(|e| format!("流读取失败：{e}"))?
+  {
+    buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+    while let Some(idx) = buffer.find("\n\n") {
+      let event_block: String = buffer.drain(..idx + 2).collect();
+      chunk_count += handle_openai_sse_block(&event_block, app);
+    }
+  }
+
+  log::info!("[llm] DashScope 流式响应结束，共 {chunk_count} 个文本增量");
+  let _ = app.emit("llm-result:done", ());
+  Ok(())
+}
+
+/// 解析 OpenAI 兼容 SSE 块：每行 `data: {...}`，结束标记 `data: [DONE]`，
+/// 文本增量在 `choices[0].delta.content`。
+fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
+  let mut delta_count = 0usize;
+  for line in block.lines() {
+    let Some(data) = line.trim().strip_prefix("data:") else {
+      continue;
+    };
+    let data = data.trim();
+    if data.is_empty() {
+      continue;
+    }
+    if data == "[DONE]" {
+      continue;
+    }
+
+    let Ok(json) = serde_json::from_str::<Value>(data) else {
+      continue;
+    };
+
+    if let Some(err) = json.get("error") {
+      let msg = err
+        .get("message")
+        .and_then(|m| m.as_str())
+        .unwrap_or("未知错误");
+      log::error!("[llm] DashScope 流内错误：{msg}");
+      let _ = app.emit("llm-result:error", msg);
+      continue;
+    }
+
+    if let Some(text) = json
+      .get("choices")
+      .and_then(|c| c.get(0))
+      .and_then(|c| c.get("delta"))
+      .and_then(|d| d.get("content"))
+      .and_then(|t| t.as_str())
+    {
+      if !text.is_empty() {
+        delta_count += 1;
+        let _ = app.emit("llm-result:chunk", text);
+      }
+    }
+  }
+  delta_count
 }
 
 /// 解析一个 SSE 事件块，返回其中产生的文本增量数量。

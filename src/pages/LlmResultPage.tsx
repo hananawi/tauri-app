@@ -7,6 +7,9 @@ import {
   getAnthropicAuthToken,
   getAnthropicBaseUrl,
   getClaudeCliPath,
+  getDashscopeApiKey,
+  getDashscopeBaseUrl,
+  getDashscopeModel,
   getLlmProvider,
   getPresetPrompt,
   getSessionDir,
@@ -40,15 +43,27 @@ export const LlmResultPage = () => {
       setError("");
       setStatus("loading");
       try {
-        const [provider, baseUrl, authToken, cliPath, sessionDir, prompt] =
-          await Promise.all([
-            getLlmProvider(),
-            getAnthropicBaseUrl(),
-            getAnthropicAuthToken(),
-            getClaudeCliPath(),
-            getSessionDir(),
-            getPresetPrompt(),
-          ]);
+        const [
+          provider,
+          baseUrl,
+          authToken,
+          cliPath,
+          sessionDir,
+          dashscopeBaseUrl,
+          dashscopeApiKey,
+          dashscopeModel,
+          prompt,
+        ] = await Promise.all([
+          getLlmProvider(),
+          getAnthropicBaseUrl(),
+          getAnthropicAuthToken(),
+          getClaudeCliPath(),
+          getSessionDir(),
+          getDashscopeBaseUrl(),
+          getDashscopeApiKey(),
+          getDashscopeModel(),
+          getPresetPrompt(),
+        ]);
         await askLlmAboutImage({
           imagePath: path,
           prompt,
@@ -57,6 +72,9 @@ export const LlmResultPage = () => {
           authToken,
           cliPath,
           sessionDir,
+          dashscopeBaseUrl,
+          dashscopeApiKey,
+          dashscopeModel,
         });
       } catch (e) {
         setError(String(e));

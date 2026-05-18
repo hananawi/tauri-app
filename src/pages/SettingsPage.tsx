@@ -3,6 +3,9 @@ import {
   getAnthropicAuthToken,
   getAnthropicBaseUrl,
   getClaudeCliPath,
+  getDashscopeApiKey,
+  getDashscopeBaseUrl,
+  getDashscopeModel,
   getLlmProvider,
   getPresetPrompt,
   getRecognitionMode,
@@ -12,6 +15,9 @@ import {
   setAnthropicAuthToken,
   setAnthropicBaseUrl,
   setClaudeCliPath,
+  setDashscopeApiKey,
+  setDashscopeBaseUrl,
+  setDashscopeModel,
   setLlmProvider,
   setPresetPrompt,
   setRecognitionMode,
@@ -44,6 +50,11 @@ const PROVIDER_OPTIONS: { value: LlmProvider; label: string; desc: string }[] =
       label: "本地 Claude Code CLI",
       desc: "调用本地 claude 命令的 -p 参数，输入纯文本，图片以临时文件的绝对路径传入由 CLI 自行读取。",
     },
+    {
+      value: "dashscope",
+      label: "阿里百炼 / 通义千问 VL",
+      desc: "走 DashScope OpenAI 兼容 /v1/chat/completions，图片以 base64 data URI 内联上传。新用户每模型 100 万输入 + 100 万输出 token 免费。",
+    },
   ];
 
 export const SettingsPage = () => {
@@ -53,6 +64,9 @@ export const SettingsPage = () => {
   const [authToken, setAuthToken] = useState("");
   const [cliPath, setCliPath] = useState("");
   const [sessionDir, setSessionDirState] = useState("");
+  const [dashscopeBaseUrl, setDashscopeBaseUrlState] = useState("");
+  const [dashscopeApiKey, setDashscopeApiKeyState] = useState("");
+  const [dashscopeModel, setDashscopeModelState] = useState("");
   const [prompt, setPrompt] = useState("");
 
   useEffect(() => {
@@ -62,6 +76,9 @@ export const SettingsPage = () => {
     void getAnthropicAuthToken().then(setAuthToken);
     void getClaudeCliPath().then(setCliPath);
     void getSessionDir().then(setSessionDirState);
+    void getDashscopeBaseUrl().then(setDashscopeBaseUrlState);
+    void getDashscopeApiKey().then(setDashscopeApiKeyState);
+    void getDashscopeModel().then(setDashscopeModelState);
     void getPresetPrompt().then(setPrompt);
   }, []);
 
@@ -89,6 +106,18 @@ export const SettingsPage = () => {
 
   const handleSessionDirBlur = async () => {
     await setSessionDir(sessionDir.trim());
+  };
+
+  const handleDashscopeBaseUrlBlur = async () => {
+    await setDashscopeBaseUrl(dashscopeBaseUrl.trim());
+  };
+
+  const handleDashscopeApiKeyBlur = async () => {
+    await setDashscopeApiKey(dashscopeApiKey.trim());
+  };
+
+  const handleDashscopeModelBlur = async () => {
+    await setDashscopeModel(dashscopeModel.trim());
   };
 
   const handlePromptBlur = async () => {
@@ -160,7 +189,7 @@ export const SettingsPage = () => {
             ))}
           </div>
 
-          {provider === "cli" ? (
+          {provider === "cli" && (
             <>
               <label className="block">
                 <span className="text-xs font-medium text-neutral-600">
@@ -197,7 +226,9 @@ export const SettingsPage = () => {
                 ~/.claude/projects/ 下哪个目录。填相对名（如 tachibana-capture）则放在用户主目录下，也可填绝对路径。
               </p>
             </>
-          ) : (
+          )}
+
+          {provider === "api" && (
             <>
               <label className="block">
                 <span className="text-xs font-medium text-neutral-600">
@@ -227,6 +258,54 @@ export const SettingsPage = () => {
               </label>
               <p className="text-xs text-neutral-400">
                 走 Authorization: Bearer 认证；模型固定为 claude-opus-4-7。
+              </p>
+            </>
+          )}
+
+          {provider === "dashscope" && (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  Base URL
+                </span>
+                <input
+                  type="text"
+                  value={dashscopeBaseUrl}
+                  onChange={(e) => setDashscopeBaseUrlState(e.target.value)}
+                  onBlur={handleDashscopeBaseUrlBlur}
+                  placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  API Key
+                </span>
+                <input
+                  type="password"
+                  value={dashscopeApiKey}
+                  onChange={(e) => setDashscopeApiKeyState(e.target.value)}
+                  onBlur={handleDashscopeApiKeyBlur}
+                  placeholder="sk-..."
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  模型
+                </span>
+                <input
+                  type="text"
+                  value={dashscopeModel}
+                  onChange={(e) => setDashscopeModelState(e.target.value)}
+                  onBlur={handleDashscopeModelBlur}
+                  placeholder="qwen-vl-max-latest"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <p className="text-xs text-neutral-400">
+                到 bailian.console.aliyun.com 创建 API Key。常用视觉模型：
+                qwen-vl-max-latest、qwen-vl-plus、qwen-vl-ocr-latest。该字段也可填其他 OpenAI 兼容 vision 端点（GLM-4V、Moonshot、SiliconFlow 等）。
               </p>
             </>
           )}

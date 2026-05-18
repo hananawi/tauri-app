@@ -37,6 +37,9 @@ export async function askLlmAboutImage(args: {
   authToken: string;
   cliPath: string;
   sessionDir: string;
+  dashscopeBaseUrl: string;
+  dashscopeApiKey: string;
+  dashscopeModel: string;
 }): Promise<void> {
   return invoke("ask_llm_about_image", args);
 }

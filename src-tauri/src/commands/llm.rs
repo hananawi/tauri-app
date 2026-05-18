@@ -438,13 +438,7 @@ async fn stream_llm_dashscope(
     }]
   });
 
-  // 兼容用户在 base URL 里带或不带 /v1 后缀。
-  let trimmed = base_url.trim_end_matches('/');
-  let endpoint = if trimmed.ends_with("/v1") {
-    format!("{trimmed}/chat/completions")
-  } else {
-    format!("{trimmed}/v1/chat/completions")
-  };
+  let endpoint = dashscope_endpoint(base_url);
   log::info!("[llm] 请求 DashScope {endpoint}，模型 {model}");
   let client = http.client();
   let mut resp = client
@@ -483,55 +477,26 @@ async fn stream_llm_dashscope(
   Ok(())
 }
 
-/// 解析 OpenAI 兼容 SSE 块：每行 `data: {...}`，结束标记 `data: [DONE]`，
-/// 文本增量在 `choices[0].delta.content`。
-fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
-  let mut delta_count = 0usize;
-  for line in block.lines() {
-    let Some(data) = line.trim().strip_prefix("data:") else {
-      continue;
-    };
-    let data = data.trim();
-    if data.is_empty() {
-      continue;
-    }
-    if data == "[DONE]" {
-      continue;
-    }
-
-    let Ok(json) = serde_json::from_str::<Value>(data) else {
-      continue;
-    };
-
-    if let Some(err) = json.get("error") {
-      let msg = err
-        .get("message")
-        .and_then(|m| m.as_str())
-        .unwrap_or("未知错误");
-      log::error!("[llm] DashScope 流内错误：{msg}");
-      let _ = app.emit("llm-result:error", msg);
-      continue;
-    }
-
-    if let Some(text) = json
-      .get("choices")
-      .and_then(|c| c.get(0))
-      .and_then(|c| c.get("delta"))
-      .and_then(|d| d.get("content"))
-      .and_then(|t| t.as_str())
-    {
-      if !text.is_empty() {
-        delta_count += 1;
-        let _ = app.emit("llm-result:chunk", text);
-      }
-    }
-  }
-  delta_count
+/// SSE 块解析结果。把"提取信号"和"emit 事件"解耦，便于纯函数单测。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SseParse {
+  pub deltas: Vec<String>,
+  pub done: bool,
+  pub error: Option<String>,
 }
 
-/// 解析一个 SSE 事件块，返回其中产生的文本增量数量。
-fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
-  let mut delta_count = 0usize;
+impl SseParse {
+  pub fn delta_count(&self) -> usize {
+    self.deltas.len()
+  }
+}
+
+/// 解析 Anthropic 流式 SSE 块：
+/// - `content_block_delta` + `text_delta`：文本增量
+/// - `message_stop`：流结束
+/// - `error`：流内错误
+pub(crate) fn parse_anthropic_sse_block(block: &str) -> SseParse {
+  let mut out = SseParse::default();
   for line in block.lines() {
     let Some(data) = line.trim().strip_prefix("data:") else {
       continue;
@@ -555,25 +520,215 @@ fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
           .and_then(|d| d.get("text"))
           .and_then(|t| t.as_str())
         {
-          delta_count += 1;
-          let _ = app.emit("llm-result:chunk", text);
+          out.deltas.push(text.to_string());
         }
       }
       Some("message_stop") => {
-        log::info!("[llm] 收到 message_stop");
-        let _ = app.emit("llm-result:done", ());
+        out.done = true;
       }
       Some("error") => {
-        let msg = json
-          .get("error")
-          .and_then(|e| e.get("message"))
-          .and_then(|m| m.as_str())
-          .unwrap_or("未知错误");
-        log::error!("[llm] 流内错误：{msg}");
-        let _ = app.emit("llm-result:error", msg);
+        out.error = Some(
+          json
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("未知错误")
+            .to_string(),
+        );
       }
       _ => {}
     }
   }
-  delta_count
+  out
+}
+
+/// 解析 OpenAI 兼容 SSE 块：每行 `data: {...}`，结束标记 `data: [DONE]`，
+/// 文本增量在 `choices[0].delta.content`。
+pub(crate) fn parse_openai_sse_block(block: &str) -> SseParse {
+  let mut out = SseParse::default();
+  for line in block.lines() {
+    let Some(data) = line.trim().strip_prefix("data:") else {
+      continue;
+    };
+    let data = data.trim();
+    if data.is_empty() {
+      continue;
+    }
+    if data == "[DONE]" {
+      out.done = true;
+      continue;
+    }
+
+    let Ok(json) = serde_json::from_str::<Value>(data) else {
+      continue;
+    };
+
+    if let Some(err) = json.get("error") {
+      out.error = Some(
+        err
+          .get("message")
+          .and_then(|m| m.as_str())
+          .unwrap_or("未知错误")
+          .to_string(),
+      );
+      continue;
+    }
+
+    if let Some(text) = json
+      .get("choices")
+      .and_then(|c| c.get(0))
+      .and_then(|c| c.get("delta"))
+      .and_then(|d| d.get("content"))
+      .and_then(|t| t.as_str())
+    {
+      if !text.is_empty() {
+        out.deltas.push(text.to_string());
+      }
+    }
+  }
+  out
+}
+
+/// 兼容用户在 base URL 里带或不带 `/v1` 后缀，拼出 OpenAI 兼容 chat 端点。
+pub(crate) fn dashscope_endpoint(base_url: &str) -> String {
+  let trimmed = base_url.trim_end_matches('/');
+  if trimmed.ends_with("/v1") {
+    format!("{trimmed}/chat/completions")
+  } else {
+    format!("{trimmed}/v1/chat/completions")
+  }
+}
+
+fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
+  let parsed = parse_openai_sse_block(block);
+  for text in &parsed.deltas {
+    let _ = app.emit("llm-result:chunk", text.clone());
+  }
+  if let Some(err) = &parsed.error {
+    log::error!("[llm] DashScope 流内错误：{err}");
+    let _ = app.emit("llm-result:error", err.clone());
+  }
+  parsed.delta_count()
+}
+
+fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
+  let parsed = parse_anthropic_sse_block(block);
+  for text in &parsed.deltas {
+    let _ = app.emit("llm-result:chunk", text.clone());
+  }
+  if parsed.done {
+    log::info!("[llm] 收到 message_stop");
+    let _ = app.emit("llm-result:done", ());
+  }
+  if let Some(err) = &parsed.error {
+    log::error!("[llm] 流内错误：{err}");
+    let _ = app.emit("llm-result:error", err.clone());
+  }
+  parsed.delta_count()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn anthropic_parses_text_delta() {
+    let block = "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n";
+    let parsed = parse_anthropic_sse_block(block);
+    assert_eq!(parsed.deltas, vec!["hello".to_string()]);
+    assert!(!parsed.done);
+    assert!(parsed.error.is_none());
+  }
+
+  #[test]
+  fn anthropic_aggregates_multiple_deltas_in_block() {
+    let block = concat!(
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"foo\"}}\n",
+      "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"bar\"}}\n\n",
+    );
+    let parsed = parse_anthropic_sse_block(block);
+    assert_eq!(parsed.deltas, vec!["foo".to_string(), "bar".to_string()]);
+  }
+
+  #[test]
+  fn anthropic_message_stop_sets_done() {
+    let parsed = parse_anthropic_sse_block("data: {\"type\":\"message_stop\"}\n\n");
+    assert!(parsed.done);
+    assert!(parsed.deltas.is_empty());
+  }
+
+  #[test]
+  fn anthropic_error_event_captured() {
+    let block = "data: {\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}\n\n";
+    let parsed = parse_anthropic_sse_block(block);
+    assert_eq!(parsed.error.as_deref(), Some("overloaded"));
+  }
+
+  #[test]
+  fn anthropic_ignores_unknown_or_malformed_lines() {
+    // 非 data: 前缀 / 非 JSON / 未知事件类型，都不应产生增量。
+    let block = "event: ping\ndata: not-json\ndata: {\"type\":\"ping\"}\n\n";
+    let parsed = parse_anthropic_sse_block(block);
+    assert!(parsed.deltas.is_empty());
+    assert!(!parsed.done);
+    assert!(parsed.error.is_none());
+  }
+
+  #[test]
+  fn anthropic_ignores_non_text_delta_subtypes() {
+    // input_json_delta 等非文本增量不应被当成 chunk 输出。
+    let block = "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\n";
+    let parsed = parse_anthropic_sse_block(block);
+    assert!(parsed.deltas.is_empty());
+  }
+
+  #[test]
+  fn openai_parses_delta() {
+    let block = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+    let parsed = parse_openai_sse_block(block);
+    assert_eq!(parsed.deltas, vec!["hi".to_string()]);
+  }
+
+  #[test]
+  fn openai_done_sentinel_sets_done_without_delta() {
+    let parsed = parse_openai_sse_block("data: [DONE]\n\n");
+    assert!(parsed.done);
+    assert!(parsed.deltas.is_empty());
+  }
+
+  #[test]
+  fn openai_error_in_stream_captured() {
+    let block = "data: {\"error\":{\"message\":\"rate limit\"}}\n\n";
+    let parsed = parse_openai_sse_block(block);
+    assert_eq!(parsed.error.as_deref(), Some("rate limit"));
+    assert!(parsed.deltas.is_empty());
+  }
+
+  #[test]
+  fn openai_skips_empty_content() {
+    // 模型 keepalive 时常发空 content，不应叠加到输出。
+    let block = "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\n";
+    let parsed = parse_openai_sse_block(block);
+    assert!(parsed.deltas.is_empty());
+  }
+
+  #[test]
+  fn dashscope_endpoint_normalizes_v1_suffix() {
+    assert_eq!(
+      dashscope_endpoint("https://x.com"),
+      "https://x.com/v1/chat/completions"
+    );
+    assert_eq!(
+      dashscope_endpoint("https://x.com/"),
+      "https://x.com/v1/chat/completions"
+    );
+    assert_eq!(
+      dashscope_endpoint("https://x.com/v1"),
+      "https://x.com/v1/chat/completions"
+    );
+    assert_eq!(
+      dashscope_endpoint("https://x.com/v1/"),
+      "https://x.com/v1/chat/completions"
+    );
+  }
 }

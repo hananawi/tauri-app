@@ -1,4 +1,5 @@
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::ocr::setup_mask;
 
@@ -6,6 +7,7 @@ pub struct AppState {
   pub is_clipping: bool,
   pub pending_llm_image: Option<String>,
   pub last_llm_image: Option<String>,
+  pub current_clip_shortcut: Option<Shortcut>,
 }
 
 impl AppState {
@@ -14,6 +16,7 @@ impl AppState {
       is_clipping: false,
       pending_llm_image: None,
       last_llm_image: None,
+      current_clip_shortcut: None,
     }
   }
 

@@ -51,3 +51,7 @@ export async function openLlmResultWindow(): Promise<void> {
 export async function openSettingsWindow(): Promise<void> {
   return invoke("open_settings_window");
 }
+
+export async function updateClipShortcut(shortcut: string): Promise<void> {
+  return invoke("update_clip_shortcut", { shortcut });
+}

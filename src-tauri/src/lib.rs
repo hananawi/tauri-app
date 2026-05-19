@@ -40,7 +40,8 @@ pub fn run() {
       take_pending_capture,
       ask_llm_about_image,
       open_llm_result_window,
-      open_settings_window
+      open_settings_window,
+      update_clip_shortcut
     ])
     .on_window_event(|window, event| {
       // settings / llm-result 窗口点红叉时隐藏而非销毁，

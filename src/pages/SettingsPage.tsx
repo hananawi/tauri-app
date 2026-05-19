@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { updateClipShortcut } from "../lib/commands";
 import {
+  DEFAULT_CLIP_SHORTCUT,
   getAnthropicAuthToken,
   getAnthropicBaseUrl,
   getClaudeCliPath,
+  getClipShortcut,
   getDashscopeApiKey,
   getDashscopeBaseUrl,
   getDashscopeModel,
@@ -15,6 +18,7 @@ import {
   setAnthropicAuthToken,
   setAnthropicBaseUrl,
   setClaudeCliPath,
+  setClipShortcut,
   setDashscopeApiKey,
   setDashscopeBaseUrl,
   setDashscopeModel,
@@ -23,6 +27,96 @@ import {
   setRecognitionMode,
   setSessionDir,
 } from "../lib/settings";
+
+const IS_MAC =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform);
+
+const MODIFIER_CODES = new Set([
+  "MetaLeft",
+  "MetaRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "OSLeft",
+  "OSRight",
+]);
+
+function buildShortcutFromEvent(e: KeyboardEvent): string | null {
+  if (MODIFIER_CODES.has(e.code)) return null;
+
+  const mods: string[] = [];
+  if (IS_MAC) {
+    if (e.metaKey) mods.push("CommandOrControl");
+    if (e.ctrlKey) mods.push("Control");
+  } else {
+    if (e.ctrlKey) mods.push("CommandOrControl");
+    if (e.metaKey) mods.push("Super");
+  }
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+
+  return [...mods, e.code].join("+");
+}
+
+function formatToken(tok: string): string {
+  if (IS_MAC) {
+    const m: Record<string, string> = {
+      CommandOrControl: "⌘",
+      CmdOrCtrl: "⌘",
+      Command: "⌘",
+      Cmd: "⌘",
+      Meta: "⌘",
+      Super: "⌘",
+      Control: "⌃",
+      Ctrl: "⌃",
+      Alt: "⌥",
+      Option: "⌥",
+      Shift: "⇧",
+    };
+    if (m[tok]) return m[tok];
+  } else {
+    const m: Record<string, string> = {
+      CommandOrControl: "Ctrl",
+      CmdOrCtrl: "Ctrl",
+      Control: "Ctrl",
+      Ctrl: "Ctrl",
+      Alt: "Alt",
+      Option: "Alt",
+      Shift: "Shift",
+      Super: "Win",
+      Meta: "Win",
+      Command: "Win",
+    };
+    if (m[tok]) return m[tok];
+  }
+  if (tok.startsWith("Key") && tok.length === 4) return tok.slice(3);
+  if (tok.startsWith("Digit") && tok.length === 6) return tok.slice(5);
+  if (tok === "ArrowUp") return "↑";
+  if (tok === "ArrowDown") return "↓";
+  if (tok === "ArrowLeft") return "←";
+  if (tok === "ArrowRight") return "→";
+  if (tok === "Escape") return "Esc";
+  if (tok === "Backspace") return "⌫";
+  if (tok === "Delete") return "⌦";
+  return tok;
+}
+
+function formatShortcut(sc: string): string {
+  if (!sc) return "";
+  return sc.split("+").map(formatToken).join(IS_MAC ? "" : "+");
+}
+
+type TabKey = "shortcut" | "recognition" | "llm" | "prompt";
+
+const TABS: { key: TabKey; icon: string; label: string }[] = [
+  { key: "shortcut", icon: "⌨️", label: "快捷键" },
+  { key: "recognition", icon: "🖼️", label: "识别方式" },
+  { key: "llm", icon: "🤖", label: "LLM 接口" },
+  { key: "prompt", icon: "💬", label: "Prompt" },
+];
 
 const MODE_OPTIONS: { value: RecognitionMode; label: string; desc: string }[] =
   [
@@ -68,6 +162,10 @@ export const SettingsPage = () => {
   const [dashscopeApiKey, setDashscopeApiKeyState] = useState("");
   const [dashscopeModel, setDashscopeModelState] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [shortcut, setShortcut] = useState<string>("");
+  const [recording, setRecording] = useState(false);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("shortcut");
 
   useEffect(() => {
     void getRecognitionMode().then(setMode);
@@ -80,7 +178,44 @@ export const SettingsPage = () => {
     void getDashscopeApiKey().then(setDashscopeApiKeyState);
     void getDashscopeModel().then(setDashscopeModelState);
     void getPresetPrompt().then(setPrompt);
+    void getClipShortcut().then(setShortcut);
   }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    const handler = async (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const sc = buildShortcutFromEvent(e);
+      if (!sc) return;
+      setRecording(false);
+      try {
+        await updateClipShortcut(sc);
+        await setClipShortcut(sc);
+        setShortcut(sc);
+        setShortcutError(null);
+      } catch (err) {
+        setShortcutError(String(err));
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [recording]);
+
+  const handleResetShortcut = async () => {
+    try {
+      await updateClipShortcut(DEFAULT_CLIP_SHORTCUT);
+      await setClipShortcut(DEFAULT_CLIP_SHORTCUT);
+      setShortcut(DEFAULT_CLIP_SHORTCUT);
+      setShortcutError(null);
+    } catch (err) {
+      setShortcutError(String(err));
+    }
+  };
 
   const handleModeChange = async (next: RecognitionMode) => {
     setMode(next);
@@ -127,13 +262,67 @@ export const SettingsPage = () => {
   return (
     <div className="flex flex-col h-screen bg-neutral-100 text-neutral-800">
       <header className="flex items-center gap-1 px-3 py-2 border-b border-neutral-200 bg-neutral-50">
-        <div className="flex flex-col items-center px-3 py-1 rounded-md bg-blue-500/10 text-blue-600">
-          <span className="text-base leading-none">⚙️</span>
-          <span className="text-xs mt-0.5">通用</span>
-        </div>
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex flex-col items-center px-3 py-1 rounded-md transition-colors ${
+                isActive
+                  ? "bg-blue-500/10 text-blue-600"
+                  : "text-neutral-500 hover:bg-neutral-200/60"
+              }`}
+            >
+              <span className="text-base leading-none">{tab.icon}</span>
+              <span className="text-xs mt-0.5">{tab.label}</span>
+            </button>
+          );
+        })}
       </header>
 
       <main className="flex-1 overflow-auto p-5 space-y-5">
+        {activeTab === "shortcut" && (
+        <section className="bg-white rounded-lg border border-neutral-200 p-4">
+          <h2 className="text-sm font-semibold mb-1">截图快捷键</h2>
+          <p className="text-xs text-neutral-500 mb-3">
+            点击下方按钮，按下你想要的按键即可保存，可以是单键或组合键。按 Esc 取消录制（如需将 Esc 作为快捷键，请改用其它方式）。
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShortcutError(null);
+                setRecording(true);
+              }}
+              className={`min-w-[180px] text-sm border rounded-md px-3 py-2 font-mono text-center transition-colors ${
+                recording
+                  ? "border-blue-400 bg-blue-50 text-blue-600"
+                  : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300"
+              }`}
+            >
+              {recording
+                ? "按下快捷键..."
+                : shortcut
+                  ? formatShortcut(shortcut)
+                  : "未设置"}
+            </button>
+            <button
+              type="button"
+              onClick={handleResetShortcut}
+              className="text-xs text-neutral-500 hover:text-neutral-700 underline-offset-2 hover:underline"
+            >
+              恢复默认
+            </button>
+          </div>
+          {shortcutError && (
+            <p className="mt-2 text-xs text-red-500">{shortcutError}</p>
+          )}
+        </section>
+        )}
+
+        {activeTab === "recognition" && (
         <section className="bg-white rounded-lg border border-neutral-200 p-4">
           <h2 className="text-sm font-semibold mb-3">截图识别方式</h2>
           <div className="space-y-2">
@@ -159,7 +348,9 @@ export const SettingsPage = () => {
             ))}
           </div>
         </section>
+        )}
 
+        {activeTab === "llm" && (
         <section className="bg-white rounded-lg border border-neutral-200 p-4 space-y-3">
           <h2 className="text-sm font-semibold">LLM 接口配置</h2>
 
@@ -310,7 +501,9 @@ export const SettingsPage = () => {
             </>
           )}
         </section>
+        )}
 
+        {activeTab === "prompt" && (
         <section className="bg-white rounded-lg border border-neutral-200 p-4">
           <h2 className="text-sm font-semibold mb-1">预设 Prompt</h2>
           <p className="text-xs text-neutral-500 mb-2">
@@ -323,6 +516,7 @@ export const SettingsPage = () => {
             className="w-full h-24 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-md p-2 resize-none focus:outline-none focus:border-blue-400"
           />
         </section>
+        )}
       </main>
     </div>
   );

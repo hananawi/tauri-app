@@ -14,6 +14,7 @@ const PRESET_PROMPT_KEY = "presetPrompt";
 const DASHSCOPE_BASE_URL_KEY = "dashscopeBaseUrl";
 const DASHSCOPE_API_KEY_KEY = "dashscopeApiKey";
 const DASHSCOPE_MODEL_KEY = "dashscopeModel";
+const CLIP_SHORTCUT_KEY = "clipShortcut";
 
 const DEFAULT_MODE: RecognitionMode = "llm";
 const DEFAULT_PROVIDER: LlmProvider = "api";
@@ -23,6 +24,7 @@ const DEFAULT_SESSION_DIR = "tachibana-capture";
 const DEFAULT_DASHSCOPE_BASE_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_DASHSCOPE_MODEL = "qwen-vl-max-latest";
+export const DEFAULT_CLIP_SHORTCUT = "CommandOrControl+Shift+KeyR";
 
 const store = new LazyStore("settings.json");
 
@@ -115,6 +117,16 @@ export async function getDashscopeModel(): Promise<string> {
 
 export async function setDashscopeModel(model: string): Promise<void> {
   await store.set(DASHSCOPE_MODEL_KEY, model);
+  await store.save();
+}
+
+export async function getClipShortcut(): Promise<string> {
+  const sc = await store.get<string>(CLIP_SHORTCUT_KEY);
+  return sc ?? DEFAULT_CLIP_SHORTCUT;
+}
+
+export async function setClipShortcut(sc: string): Promise<void> {
+  await store.set(CLIP_SHORTCUT_KEY, sc);
   await store.save();
 }
 

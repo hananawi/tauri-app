@@ -9,6 +9,9 @@ use tauri::{
 use crate::ocr;
 use crate::state::AppState;
 
+/// 与前端 src/lib/settings.ts 的 DEFAULT_CLIP_SHORTCUT 保持一致。
+pub const DEFAULT_CLIP_SHORTCUT_STR: &str = "CommandOrControl+Shift+KeyR";
+
 pub fn init_app(
   app: &mut tauri::App,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -30,28 +33,16 @@ pub fn init_app(
 fn register_global_shortcut(
   app: &mut tauri::App,
 ) -> Result<(), Box<dyn std::error::Error>> {
+  use std::str::FromStr;
   use tauri_plugin_global_shortcut::{
-    Code, Modifiers, Shortcut, ShortcutState,
+    GlobalShortcutExt, Shortcut, ShortcutState,
   };
 
-  // 主修饰键在两个平台语义不一致：
-  // mac 上 SUPER = Cmd（用户习惯），Windows 上 SUPER = Win 键（会和系统截图抢）。
-  // 因此 Windows 走 Ctrl，mac 走 Cmd，都叠 Shift+R。
-  #[cfg(target_os = "macos")]
-  let primary_mod = Modifiers::SUPER | Modifiers::SHIFT;
-  #[cfg(not(target_os = "macos"))]
-  let primary_mod = Modifiers::CONTROL | Modifiers::SHIFT;
-
-  let clip_shortcut = Shortcut::new(Some(primary_mod), Code::KeyR);
-
+  // 注册插件（带统一 handler）：之后通过 global_shortcut().register/unregister 动态增删快捷键。
   app.handle().plugin(
     tauri_plugin_global_shortcut::Builder::new()
-      .with_shortcuts([clip_shortcut])?
-      .with_handler(move |app, shortcut, event| {
-        println!("shortcut pressed {shortcut:?}");
-        if matches!(event.state(), ShortcutState::Released)
-          && shortcut == &clip_shortcut
-        {
+      .with_handler(move |app, _shortcut, event| {
+        if matches!(event.state(), ShortcutState::Released) {
           let state = app.state::<Mutex<AppState>>();
           let mut state = state.lock().unwrap();
           if !state.is_clipping {
@@ -61,7 +52,37 @@ fn register_global_shortcut(
       })
       .build(),
   )?;
+
+  let default_shortcut = Shortcut::from_str(DEFAULT_CLIP_SHORTCUT_STR)
+    .expect("默认快捷键应可解析");
+  let saved = read_saved_clip_shortcut(app)
+    .and_then(|s| Shortcut::from_str(&s).ok());
+  let preferred = saved.unwrap_or(default_shortcut);
+
+  let gs = app.global_shortcut();
+  let registered = match gs.register(preferred) {
+    Ok(()) => preferred,
+    Err(e) if preferred != default_shortcut => {
+      eprintln!(
+        "注册保存的快捷键失败 ({e})，回退到默认 {DEFAULT_CLIP_SHORTCUT_STR}"
+      );
+      gs.register(default_shortcut)?;
+      default_shortcut
+    }
+    Err(e) => return Err(e.into()),
+  };
+
+  let state = app.state::<Mutex<AppState>>();
+  state.lock().unwrap().current_clip_shortcut = Some(registered);
+
   Ok(())
+}
+
+fn read_saved_clip_shortcut(app: &tauri::App) -> Option<String> {
+  use tauri_plugin_store::StoreExt;
+  let store = app.store("settings.json").ok()?;
+  let value = store.get("clipShortcut")?;
+  value.as_str().map(|s| s.to_string())
 }
 
 #[cfg(target_os = "macos")]

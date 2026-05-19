@@ -306,10 +306,10 @@ export const SettingsPage = () => {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`flex flex-col items-center px-3 py-1 rounded-md transition-colors ${
+              className={`flex flex-col items-center px-3 py-1 rounded-md border transition-colors ${
                 isActive
-                  ? "bg-blue-500/10 text-blue-600"
-                  : "text-neutral-500 hover:bg-neutral-200/60"
+                  ? "bg-blue-100 text-blue-700 border-blue-300"
+                  : "text-neutral-500 border-transparent hover:bg-neutral-200/60"
               }`}
             >
               <span className="text-base leading-none">{tab.icon}</span>

@@ -2,7 +2,7 @@ import { LazyStore } from "@tauri-apps/plugin-store";
 import { DEFAULT_PRESET_PROMPT } from "./prompt";
 
 export type RecognitionMode = "ocr" | "llm";
-export type LlmProvider = "api" | "cli" | "dashscope";
+export type LlmProvider = "api" | "cli" | "openai" | "cloudflare";
 
 const RECOGNITION_MODE_KEY = "recognitionMode";
 const LLM_PROVIDER_KEY = "llmProvider";
@@ -11,19 +11,29 @@ const ANTHROPIC_AUTH_TOKEN_KEY = "anthropicAuthToken";
 const CLAUDE_CLI_PATH_KEY = "claudeCliPath";
 const SESSION_DIR_KEY = "sessionDir";
 const PRESET_PROMPT_KEY = "presetPrompt";
-const DASHSCOPE_BASE_URL_KEY = "dashscopeBaseUrl";
-const DASHSCOPE_API_KEY_KEY = "dashscopeApiKey";
-const DASHSCOPE_MODEL_KEY = "dashscopeModel";
+// 旧 dashscope 字段，仅在用户尚未配置 openai 时作为兜底读取，不再写入。
+const LEGACY_DASHSCOPE_BASE_URL_KEY = "dashscopeBaseUrl";
+const LEGACY_DASHSCOPE_API_KEY_KEY = "dashscopeApiKey";
+const LEGACY_DASHSCOPE_MODEL_KEY = "dashscopeModel";
+const OPENAI_BASE_URL_KEY = "openaiBaseUrl";
+const OPENAI_API_KEY_KEY = "openaiApiKey";
+const OPENAI_MODEL_KEY = "openaiModel";
 const CLIP_SHORTCUT_KEY = "clipShortcut";
+const CF_BASE_URL_KEY = "cloudflareBaseUrl";
+const CF_AUTH_KEY = "cloudflareAigAuthorization";
+const CF_BYOK_ALIAS_KEY = "cloudflareAigByokAlias";
+const CF_MODEL_KEY = "cloudflareModel";
 
 const DEFAULT_MODE: RecognitionMode = "llm";
 const DEFAULT_PROVIDER: LlmProvider = "api";
 const DEFAULT_BASE_URL = "https://idealab.alibaba-inc.com/api/anthropic";
 const DEFAULT_CLI_PATH = "claude";
 const DEFAULT_SESSION_DIR = "tachibana-capture";
-const DEFAULT_DASHSCOPE_BASE_URL =
-  "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_DASHSCOPE_MODEL = "qwen-vl-max-latest";
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_CF_BASE_URL =
+  "https://gateway.ai.cloudflare.com/v1/fde103cecbb135298d9110a4ef8c8ed6/hananawi";
+const DEFAULT_CF_MODEL = "anthropic/claude-3-5-sonnet-20241022";
 export const DEFAULT_CLIP_SHORTCUT = "CommandOrControl+Shift+KeyR";
 
 const store = new LazyStore("settings.json");
@@ -41,8 +51,18 @@ export async function setRecognitionMode(
 }
 
 export async function getLlmProvider(): Promise<LlmProvider> {
-  const provider = await store.get<LlmProvider>(LLM_PROVIDER_KEY);
-  return provider ?? DEFAULT_PROVIDER;
+  const provider = await store.get<string>(LLM_PROVIDER_KEY);
+  // 老配置里的 "dashscope" 已合并到 "openai"（同一份 OpenAI 兼容协议）。
+  if (provider === "dashscope") return "openai";
+  if (
+    provider === "api" ||
+    provider === "cli" ||
+    provider === "openai" ||
+    provider === "cloudflare"
+  ) {
+    return provider;
+  }
+  return DEFAULT_PROVIDER;
 }
 
 export async function setLlmProvider(provider: LlmProvider): Promise<void> {
@@ -90,33 +110,79 @@ export async function setAnthropicAuthToken(token: string): Promise<void> {
   await store.save();
 }
 
-export async function getDashscopeBaseUrl(): Promise<string> {
-  const url = await store.get<string>(DASHSCOPE_BASE_URL_KEY);
-  return url ?? DEFAULT_DASHSCOPE_BASE_URL;
+export async function getOpenaiBaseUrl(): Promise<string> {
+  const url = await store.get<string>(OPENAI_BASE_URL_KEY);
+  if (url) return url;
+  const legacy = await store.get<string>(LEGACY_DASHSCOPE_BASE_URL_KEY);
+  return legacy ?? DEFAULT_OPENAI_BASE_URL;
 }
 
-export async function setDashscopeBaseUrl(url: string): Promise<void> {
-  await store.set(DASHSCOPE_BASE_URL_KEY, url);
+export async function setOpenaiBaseUrl(url: string): Promise<void> {
+  await store.set(OPENAI_BASE_URL_KEY, url);
   await store.save();
 }
 
-export async function getDashscopeApiKey(): Promise<string> {
-  const key = await store.get<string>(DASHSCOPE_API_KEY_KEY);
-  return key ?? "";
+export async function getOpenaiApiKey(): Promise<string> {
+  const key = await store.get<string>(OPENAI_API_KEY_KEY);
+  if (key) return key;
+  const legacy = await store.get<string>(LEGACY_DASHSCOPE_API_KEY_KEY);
+  return legacy ?? "";
 }
 
-export async function setDashscopeApiKey(key: string): Promise<void> {
-  await store.set(DASHSCOPE_API_KEY_KEY, key);
+export async function setOpenaiApiKey(key: string): Promise<void> {
+  await store.set(OPENAI_API_KEY_KEY, key);
   await store.save();
 }
 
-export async function getDashscopeModel(): Promise<string> {
-  const model = await store.get<string>(DASHSCOPE_MODEL_KEY);
-  return model ?? DEFAULT_DASHSCOPE_MODEL;
+export async function getOpenaiModel(): Promise<string> {
+  const model = await store.get<string>(OPENAI_MODEL_KEY);
+  if (model) return model;
+  const legacy = await store.get<string>(LEGACY_DASHSCOPE_MODEL_KEY);
+  return legacy ?? DEFAULT_OPENAI_MODEL;
 }
 
-export async function setDashscopeModel(model: string): Promise<void> {
-  await store.set(DASHSCOPE_MODEL_KEY, model);
+export async function setOpenaiModel(model: string): Promise<void> {
+  await store.set(OPENAI_MODEL_KEY, model);
+  await store.save();
+}
+
+export async function getCloudflareBaseUrl(): Promise<string> {
+  const url = await store.get<string>(CF_BASE_URL_KEY);
+  return url ?? DEFAULT_CF_BASE_URL;
+}
+
+export async function setCloudflareBaseUrl(url: string): Promise<void> {
+  await store.set(CF_BASE_URL_KEY, url);
+  await store.save();
+}
+
+export async function getCloudflareAigAuthorization(): Promise<string> {
+  const token = await store.get<string>(CF_AUTH_KEY);
+  return token ?? "";
+}
+
+export async function setCloudflareAigAuthorization(token: string): Promise<void> {
+  await store.set(CF_AUTH_KEY, token);
+  await store.save();
+}
+
+export async function getCloudflareAigByokAlias(): Promise<string> {
+  const alias = await store.get<string>(CF_BYOK_ALIAS_KEY);
+  return alias ?? "";
+}
+
+export async function setCloudflareAigByokAlias(alias: string): Promise<void> {
+  await store.set(CF_BYOK_ALIAS_KEY, alias);
+  await store.save();
+}
+
+export async function getCloudflareModel(): Promise<string> {
+  const model = await store.get<string>(CF_MODEL_KEY);
+  return model ?? DEFAULT_CF_MODEL;
+}
+
+export async function setCloudflareModel(model: string): Promise<void> {
+  await store.set(CF_MODEL_KEY, model);
   await store.save();
 }
 

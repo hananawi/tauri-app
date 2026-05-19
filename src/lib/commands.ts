@@ -37,9 +37,13 @@ export async function askLlmAboutImage(args: {
   authToken: string;
   cliPath: string;
   sessionDir: string;
-  dashscopeBaseUrl: string;
-  dashscopeApiKey: string;
-  dashscopeModel: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  openaiModel: string;
+  cloudflareBaseUrl: string;
+  cloudflareAigAuthorization: string;
+  cloudflareAigByokAlias: string;
+  cloudflareModel: string;
 }): Promise<void> {
   return invoke("ask_llm_about_image", args);
 }

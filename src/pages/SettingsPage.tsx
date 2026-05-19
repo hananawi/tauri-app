@@ -6,10 +6,14 @@ import {
   getAnthropicBaseUrl,
   getClaudeCliPath,
   getClipShortcut,
-  getDashscopeApiKey,
-  getDashscopeBaseUrl,
-  getDashscopeModel,
+  getCloudflareAigAuthorization,
+  getCloudflareAigByokAlias,
+  getCloudflareBaseUrl,
+  getCloudflareModel,
   getLlmProvider,
+  getOpenaiApiKey,
+  getOpenaiBaseUrl,
+  getOpenaiModel,
   getPresetPrompt,
   getRecognitionMode,
   getSessionDir,
@@ -19,10 +23,14 @@ import {
   setAnthropicBaseUrl,
   setClaudeCliPath,
   setClipShortcut,
-  setDashscopeApiKey,
-  setDashscopeBaseUrl,
-  setDashscopeModel,
+  setCloudflareAigAuthorization,
+  setCloudflareAigByokAlias,
+  setCloudflareBaseUrl,
+  setCloudflareModel,
   setLlmProvider,
+  setOpenaiApiKey,
+  setOpenaiBaseUrl,
+  setOpenaiModel,
   setPresetPrompt,
   setRecognitionMode,
   setSessionDir,
@@ -145,9 +153,14 @@ const PROVIDER_OPTIONS: { value: LlmProvider; label: string; desc: string }[] =
       desc: "调用本地 claude 命令的 -p 参数，输入纯文本，图片以临时文件的绝对路径传入由 CLI 自行读取。",
     },
     {
-      value: "dashscope",
-      label: "阿里百炼 / 通义千问 VL",
-      desc: "走 DashScope OpenAI 兼容 /v1/chat/completions，图片以 base64 data URI 内联上传。新用户每模型 100 万输入 + 100 万输出 token 免费。",
+      value: "openai",
+      label: "OpenAI 兼容 API",
+      desc: "走 /v1/chat/completions，图片以 base64 data URI 内联上传。适用 OpenAI 官方、阿里百炼 / 通义千问 VL（DashScope 兼容模式）、Azure OpenAI、智谱 GLM-4V、Moonshot、OpenRouter、SiliconFlow 等。",
+    },
+    {
+      value: "cloudflare",
+      label: "Cloudflare AI Gateway（BYOK）",
+      desc: "走 Cloudflare AI Gateway 的 /compat/chat/completions（OpenAI 兼容格式），通过 cf-aig-authorization 鉴权网关，cf-aig-byok-alias 指定别名让网关注入下游 provider 的 API key。模型字段形如 provider/model-name。",
     },
   ];
 
@@ -158,9 +171,13 @@ export const SettingsPage = () => {
   const [authToken, setAuthToken] = useState("");
   const [cliPath, setCliPath] = useState("");
   const [sessionDir, setSessionDirState] = useState("");
-  const [dashscopeBaseUrl, setDashscopeBaseUrlState] = useState("");
-  const [dashscopeApiKey, setDashscopeApiKeyState] = useState("");
-  const [dashscopeModel, setDashscopeModelState] = useState("");
+  const [openaiBaseUrl, setOpenaiBaseUrlState] = useState("");
+  const [openaiApiKey, setOpenaiApiKeyState] = useState("");
+  const [openaiModel, setOpenaiModelState] = useState("");
+  const [cfBaseUrl, setCfBaseUrlState] = useState("");
+  const [cfAuth, setCfAuthState] = useState("");
+  const [cfAlias, setCfAliasState] = useState("");
+  const [cfModel, setCfModelState] = useState("");
   const [prompt, setPrompt] = useState("");
   const [shortcut, setShortcut] = useState<string>("");
   const [recording, setRecording] = useState(false);
@@ -174,9 +191,13 @@ export const SettingsPage = () => {
     void getAnthropicAuthToken().then(setAuthToken);
     void getClaudeCliPath().then(setCliPath);
     void getSessionDir().then(setSessionDirState);
-    void getDashscopeBaseUrl().then(setDashscopeBaseUrlState);
-    void getDashscopeApiKey().then(setDashscopeApiKeyState);
-    void getDashscopeModel().then(setDashscopeModelState);
+    void getOpenaiBaseUrl().then(setOpenaiBaseUrlState);
+    void getOpenaiApiKey().then(setOpenaiApiKeyState);
+    void getOpenaiModel().then(setOpenaiModelState);
+    void getCloudflareBaseUrl().then(setCfBaseUrlState);
+    void getCloudflareAigAuthorization().then(setCfAuthState);
+    void getCloudflareAigByokAlias().then(setCfAliasState);
+    void getCloudflareModel().then(setCfModelState);
     void getPresetPrompt().then(setPrompt);
     void getClipShortcut().then(setShortcut);
   }, []);
@@ -243,16 +264,32 @@ export const SettingsPage = () => {
     await setSessionDir(sessionDir.trim());
   };
 
-  const handleDashscopeBaseUrlBlur = async () => {
-    await setDashscopeBaseUrl(dashscopeBaseUrl.trim());
+  const handleOpenaiBaseUrlBlur = async () => {
+    await setOpenaiBaseUrl(openaiBaseUrl.trim());
   };
 
-  const handleDashscopeApiKeyBlur = async () => {
-    await setDashscopeApiKey(dashscopeApiKey.trim());
+  const handleOpenaiApiKeyBlur = async () => {
+    await setOpenaiApiKey(openaiApiKey.trim());
   };
 
-  const handleDashscopeModelBlur = async () => {
-    await setDashscopeModel(dashscopeModel.trim());
+  const handleOpenaiModelBlur = async () => {
+    await setOpenaiModel(openaiModel.trim());
+  };
+
+  const handleCfBaseUrlBlur = async () => {
+    await setCloudflareBaseUrl(cfBaseUrl.trim());
+  };
+
+  const handleCfAuthBlur = async () => {
+    await setCloudflareAigAuthorization(cfAuth.trim());
+  };
+
+  const handleCfAliasBlur = async () => {
+    await setCloudflareAigByokAlias(cfAlias.trim());
+  };
+
+  const handleCfModelBlur = async () => {
+    await setCloudflareModel(cfModel.trim());
   };
 
   const handlePromptBlur = async () => {
@@ -453,7 +490,7 @@ export const SettingsPage = () => {
             </>
           )}
 
-          {provider === "dashscope" && (
+          {provider === "openai" && (
             <>
               <label className="block">
                 <span className="text-xs font-medium text-neutral-600">
@@ -461,10 +498,10 @@ export const SettingsPage = () => {
                 </span>
                 <input
                   type="text"
-                  value={dashscopeBaseUrl}
-                  onChange={(e) => setDashscopeBaseUrlState(e.target.value)}
-                  onBlur={handleDashscopeBaseUrlBlur}
-                  placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                  value={openaiBaseUrl}
+                  onChange={(e) => setOpenaiBaseUrlState(e.target.value)}
+                  onBlur={handleOpenaiBaseUrlBlur}
+                  placeholder="https://api.openai.com/v1"
                   className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
                 />
               </label>
@@ -474,9 +511,9 @@ export const SettingsPage = () => {
                 </span>
                 <input
                   type="password"
-                  value={dashscopeApiKey}
-                  onChange={(e) => setDashscopeApiKeyState(e.target.value)}
-                  onBlur={handleDashscopeApiKeyBlur}
+                  value={openaiApiKey}
+                  onChange={(e) => setOpenaiApiKeyState(e.target.value)}
+                  onBlur={handleOpenaiApiKeyBlur}
                   placeholder="sk-..."
                   className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
                 />
@@ -487,16 +524,86 @@ export const SettingsPage = () => {
                 </span>
                 <input
                   type="text"
-                  value={dashscopeModel}
-                  onChange={(e) => setDashscopeModelState(e.target.value)}
-                  onBlur={handleDashscopeModelBlur}
-                  placeholder="qwen-vl-max-latest"
+                  value={openaiModel}
+                  onChange={(e) => setOpenaiModelState(e.target.value)}
+                  onBlur={handleOpenaiModelBlur}
+                  placeholder="gpt-4o-mini"
                   className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
                 />
               </label>
               <p className="text-xs text-neutral-400">
-                到 bailian.console.aliyun.com 创建 API Key。常用视觉模型：
-                qwen-vl-max-latest、qwen-vl-plus、qwen-vl-ocr-latest。该字段也可填其他 OpenAI 兼容 vision 端点（GLM-4V、Moonshot、SiliconFlow 等）。
+                走 Bearer Token + /v1/chat/completions，URL 可省略末尾 /v1。常用配置：
+              </p>
+              <ul className="text-xs text-neutral-400 list-disc pl-4 space-y-0.5">
+                <li>
+                  OpenAI：https://api.openai.com/v1 · gpt-4o / gpt-4o-mini / gpt-4.1
+                </li>
+                <li>
+                  阿里百炼（通义千问 VL）：https://dashscope.aliyuncs.com/compatible-mode/v1 · qwen-vl-max-latest / qwen-vl-plus / qwen-vl-ocr-latest
+                </li>
+                <li>
+                  其它：Azure OpenAI、智谱 GLM-4V、Moonshot、OpenRouter、SiliconFlow 等任何 OpenAI 兼容端点
+                </li>
+              </ul>
+            </>
+          )}
+
+          {provider === "cloudflare" && (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  Base URL
+                </span>
+                <input
+                  type="text"
+                  value={cfBaseUrl}
+                  onChange={(e) => setCfBaseUrlState(e.target.value)}
+                  onBlur={handleCfBaseUrlBlur}
+                  placeholder="https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway}"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  cf-aig-authorization
+                </span>
+                <input
+                  type="password"
+                  value={cfAuth}
+                  onChange={(e) => setCfAuthState(e.target.value)}
+                  onBlur={handleCfAuthBlur}
+                  placeholder="Bearer 后的 token，可省略 Bearer 前缀"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  cf-aig-byok-alias
+                </span>
+                <input
+                  type="text"
+                  value={cfAlias}
+                  onChange={(e) => setCfAliasState(e.target.value)}
+                  onBlur={handleCfAliasBlur}
+                  placeholder="网关里配置的 BYOK 别名"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-600">
+                  模型
+                </span>
+                <input
+                  type="text"
+                  value={cfModel}
+                  onChange={(e) => setCfModelState(e.target.value)}
+                  onBlur={handleCfModelBlur}
+                  placeholder="provider/model-name，如 anthropic/claude-3-5-sonnet-20241022"
+                  className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+              </label>
+              <p className="text-xs text-neutral-400">
+                走 POST {`{base}/compat/chat/completions`}，OpenAI 兼容格式。Base URL 不含末尾 /compat。BYOK alias 由网关侧维护，下游 provider 的真实 API key 不会经过本机。
               </p>
             </>
           )}

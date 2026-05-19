@@ -92,9 +92,13 @@ pub async fn ask_llm_about_image(
   auth_token: String,
   cli_path: String,
   session_dir: String,
-  dashscope_base_url: String,
-  dashscope_api_key: String,
-  dashscope_model: String,
+  openai_base_url: String,
+  openai_api_key: String,
+  openai_model: String,
+  cloudflare_base_url: String,
+  cloudflare_aig_authorization: String,
+  cloudflare_aig_byok_alias: String,
+  cloudflare_model: String,
   app: AppHandle,
   http: State<'_, HttpClient>,
 ) -> Result<(), String> {
@@ -105,13 +109,26 @@ pub async fn ask_llm_about_image(
     "cli" => {
       stream_llm_cli(&image_path, &prompt, &cli_path, &session_dir, &app).await
     }
-    "dashscope" => {
-      stream_llm_dashscope(
+    "openai" => {
+      stream_llm_openai_compat(
         &image_path,
         &prompt,
-        &dashscope_base_url,
-        &dashscope_api_key,
-        &dashscope_model,
+        &openai_base_url,
+        &openai_api_key,
+        &openai_model,
+        &app,
+        &http,
+      )
+      .await
+    }
+    "cloudflare" => {
+      stream_llm_cloudflare(
+        &image_path,
+        &prompt,
+        &cloudflare_base_url,
+        &cloudflare_aig_authorization,
+        &cloudflare_aig_byok_alias,
+        &cloudflare_model,
         &app,
         &http,
       )
@@ -395,10 +412,10 @@ async fn stream_llm(
   Ok(())
 }
 
-/// 阿里 DashScope OpenAI 兼容模式 (`/compatible-mode/v1`) 的流式调用。
-/// 同样可承载任何其他 OpenAI 兼容的 vision 端点（智谱 GLM-4V、Moonshot、SiliconFlow 等），
-/// 只需把 base_url / model 改成对应值。
-async fn stream_llm_dashscope(
+/// OpenAI 兼容 `/v1/chat/completions` 流式调用。
+/// 适用于 OpenAI 官方、阿里 DashScope `/compatible-mode/v1`、Azure OpenAI、
+/// OpenRouter、SiliconFlow、智谱 GLM-4V、Moonshot 等任何 OpenAI 兼容 vision 端点。
+async fn stream_llm_openai_compat(
   image_path: &str,
   prompt: &str,
   base_url: &str,
@@ -421,7 +438,7 @@ async fn stream_llm_dashscope(
     std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
   let image_b64 = STANDARD.encode(&image_bytes);
   log::info!(
-    "[llm] DashScope 读取图片 {} 字节，base64 编码完成",
+    "[llm] OpenAI 读取图片 {} 字节，base64 编码完成",
     image_bytes.len()
   );
 
@@ -445,7 +462,7 @@ async fn stream_llm_dashscope(
   } else {
     format!("{trimmed}/v1/chat/completions")
   };
-  log::info!("[llm] 请求 DashScope {endpoint}，模型 {model}");
+  log::info!("[llm] 请求 OpenAI {endpoint}，模型 {model}");
   let client = http.client();
   let mut resp = client
     .post(endpoint)
@@ -458,13 +475,13 @@ async fn stream_llm_dashscope(
     .map_err(|e| format!("请求失败：{e}"))?;
 
   let status = resp.status();
-  log::info!("[llm] DashScope 响应状态 {status}");
+  log::info!("[llm] OpenAI 响应状态 {status}");
   if !status.is_success() {
     let text = resp.text().await.unwrap_or_default();
     return Err(format!("API 返回错误 {status}：{text}"));
   }
 
-  log::info!("[llm] 开始接收 DashScope 流式响应");
+  log::info!("[llm] 开始接收 OpenAI 流式响应");
   let mut buffer = String::new();
   let mut chunk_count = 0usize;
   while let Some(chunk) =
@@ -478,7 +495,107 @@ async fn stream_llm_dashscope(
     }
   }
 
-  log::info!("[llm] DashScope 流式响应结束，共 {chunk_count} 个文本增量");
+  log::info!("[llm] OpenAI 流式响应结束，共 {chunk_count} 个文本增量");
+  let _ = app.emit("llm-result:done", ());
+  Ok(())
+}
+
+/// Cloudflare AI Gateway 的 BYOK + OpenAI 兼容端点。
+/// URL 形如 `https://gateway.ai.cloudflare.com/v1/{account}/{gateway}`，
+/// 最终请求路径 `{base}/compat/chat/completions`，模型字段为
+/// `provider/model-name`（如 `anthropic/claude-3-5-sonnet-20241022`）。
+/// 鉴权走 `cf-aig-authorization`，下游 provider 的 API key 由
+/// `cf-aig-byok-alias` 指定的别名在网关侧注入。
+async fn stream_llm_cloudflare(
+  image_path: &str,
+  prompt: &str,
+  base_url: &str,
+  aig_auth: &str,
+  byok_alias: &str,
+  model: &str,
+  app: &AppHandle,
+  http: &HttpClient,
+) -> Result<(), String> {
+  if base_url.is_empty() {
+    return Err("未配置 Cloudflare Base URL，请在设置中填写".to_string());
+  }
+  if aig_auth.is_empty() {
+    return Err("未配置 cf-aig-authorization，请在设置中填写".to_string());
+  }
+  if byok_alias.is_empty() {
+    return Err("未配置 cf-aig-byok-alias，请在设置中填写".to_string());
+  }
+  if model.is_empty() {
+    return Err("未配置模型，请在设置中填写".to_string());
+  }
+
+  let image_bytes =
+    std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
+  let image_b64 = STANDARD.encode(&image_bytes);
+  log::info!(
+    "[llm] Cloudflare 读取图片 {} 字节，base64 编码完成",
+    image_bytes.len()
+  );
+
+  let data_url = format!("data:image/png;base64,{image_b64}");
+  let body = json!({
+    "model": model,
+    "stream": true,
+    "messages": [{
+      "role": "user",
+      "content": [
+        { "type": "image_url", "image_url": { "url": data_url } },
+        { "type": "text", "text": prompt }
+      ]
+    }]
+  });
+
+  let endpoint = format!(
+    "{}/compat/chat/completions",
+    base_url.trim_end_matches('/')
+  );
+  log::info!("[llm] 请求 Cloudflare {endpoint}，模型 {model}");
+
+  let aig_auth_header = if aig_auth.starts_with("Bearer ") {
+    aig_auth.to_string()
+  } else {
+    format!("Bearer {aig_auth}")
+  };
+
+  let client = http.client();
+  let mut resp = client
+    .post(endpoint)
+    .header("accept", "text/event-stream")
+    .header("content-type", "application/json")
+    .header("cf-aig-authorization", aig_auth_header)
+    .header("cf-aig-byok-alias", byok_alias)
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("请求失败：{e}"))?;
+
+  let status = resp.status();
+  log::info!("[llm] Cloudflare 响应状态 {status}");
+  if !status.is_success() {
+    let text = resp.text().await.unwrap_or_default();
+    return Err(format!("API 返回错误 {status}：{text}"));
+  }
+
+  log::info!("[llm] 开始接收 Cloudflare 流式响应");
+  let mut buffer = String::new();
+  let mut chunk_count = 0usize;
+  while let Some(chunk) =
+    resp.chunk().await.map_err(|e| format!("流读取失败：{e}"))?
+  {
+    buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+    while let Some(idx) = buffer.find("\n\n") {
+      let event_block: String = buffer.drain(..idx + 2).collect();
+      chunk_count += handle_openai_sse_block(&event_block, app);
+    }
+  }
+
+  log::info!("[llm] Cloudflare 流式响应结束，共 {chunk_count} 个文本增量");
   let _ = app.emit("llm-result:done", ());
   Ok(())
 }
@@ -508,7 +625,7 @@ fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
         .get("message")
         .and_then(|m| m.as_str())
         .unwrap_or("未知错误");
-      log::error!("[llm] DashScope 流内错误：{msg}");
+      log::error!("[llm] OpenAI 流内错误：{msg}");
       let _ = app.emit("llm-result:error", msg);
       continue;
     }

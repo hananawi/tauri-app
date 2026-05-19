@@ -1,5 +1,6 @@
 mod clipboard;
 mod clipping;
+mod fs;
 mod llm;
 mod ocr;
 mod shortcut;
@@ -8,6 +9,7 @@ mod window;
 
 pub use clipboard::*;
 pub use clipping::*;
+pub use fs::*;
 pub use llm::*;
 pub use ocr::*;
 pub use shortcut::*;

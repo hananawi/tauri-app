@@ -59,3 +59,10 @@ export async function openSettingsWindow(): Promise<void> {
 export async function updateClipShortcut(shortcut: string): Promise<void> {
   return invoke("update_clip_shortcut", { shortcut });
 }
+
+export async function writeTextFile(
+  path: string,
+  contents: string
+): Promise<void> {
+  return invoke("write_text_file", { path, contents });
+}

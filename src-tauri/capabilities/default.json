@@ -17,6 +17,7 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
     "http:default",
-    "store:default"
+    "store:default",
+    "dialog:default"
   ]
 }

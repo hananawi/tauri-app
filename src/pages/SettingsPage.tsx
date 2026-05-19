@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
-import { updateClipShortcut } from "../lib/commands";
+import { useEffect, useRef, useState } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { updateClipShortcut, writeTextFile } from "../lib/commands";
 import {
   DEFAULT_CLIP_SHORTCUT,
+  exportSettings,
   getAnthropicAuthToken,
   getAnthropicBaseUrl,
   getClaudeCliPath,
@@ -17,6 +19,7 @@ import {
   getPresetPrompt,
   getRecognitionMode,
   getSessionDir,
+  importSettings,
   LlmProvider,
   RecognitionMode,
   setAnthropicAuthToken,
@@ -117,13 +120,14 @@ function formatShortcut(sc: string): string {
   return sc.split("+").map(formatToken).join(IS_MAC ? "" : "+");
 }
 
-type TabKey = "shortcut" | "recognition" | "llm" | "prompt";
+type TabKey = "shortcut" | "recognition" | "llm" | "prompt" | "backup";
 
 const TABS: { key: TabKey; icon: string; label: string }[] = [
   { key: "shortcut", icon: "⌨️", label: "快捷键" },
   { key: "recognition", icon: "🖼️", label: "识别方式" },
   { key: "llm", icon: "🤖", label: "LLM 接口" },
   { key: "prompt", icon: "💬", label: "Prompt" },
+  { key: "backup", icon: "📦", label: "导入/导出" },
 ];
 
 const MODE_OPTIONS: { value: RecognitionMode; label: string; desc: string }[] =
@@ -183,6 +187,11 @@ export const SettingsPage = () => {
   const [recording, setRecording] = useState(false);
   const [shortcutError, setShortcutError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("shortcut");
+  const [backupMessage, setBackupMessage] = useState<{
+    kind: "ok" | "error";
+    text: string;
+  } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void getRecognitionMode().then(setMode);
@@ -294,6 +303,110 @@ export const SettingsPage = () => {
 
   const handlePromptBlur = async () => {
     await setPresetPrompt(prompt.trim());
+  };
+
+  const reloadAllSettings = async () => {
+    const [
+      m,
+      p,
+      bu,
+      at,
+      cp,
+      sd,
+      obu,
+      oak,
+      om,
+      cfu,
+      cfa,
+      cfl,
+      cfm,
+      pp,
+      sc,
+    ] = await Promise.all([
+      getRecognitionMode(),
+      getLlmProvider(),
+      getAnthropicBaseUrl(),
+      getAnthropicAuthToken(),
+      getClaudeCliPath(),
+      getSessionDir(),
+      getOpenaiBaseUrl(),
+      getOpenaiApiKey(),
+      getOpenaiModel(),
+      getCloudflareBaseUrl(),
+      getCloudflareAigAuthorization(),
+      getCloudflareAigByokAlias(),
+      getCloudflareModel(),
+      getPresetPrompt(),
+      getClipShortcut(),
+    ]);
+    setMode(m);
+    setProvider(p);
+    setBaseUrl(bu);
+    setAuthToken(at);
+    setCliPath(cp);
+    setSessionDirState(sd);
+    setOpenaiBaseUrlState(obu);
+    setOpenaiApiKeyState(oak);
+    setOpenaiModelState(om);
+    setCfBaseUrlState(cfu);
+    setCfAuthState(cfa);
+    setCfAliasState(cfl);
+    setCfModelState(cfm);
+    setPrompt(pp);
+    setShortcut(sc);
+    return sc;
+  };
+
+  const handleExport = async () => {
+    setBackupMessage(null);
+    try {
+      const ts = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .replace(/T/, "_")
+        .replace(/Z$/, "");
+      const path = await save({
+        title: "导出配置",
+        defaultPath: `tachibana-settings_${ts}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return;
+      const data = await exportSettings();
+      await writeTextFile(path, JSON.stringify(data, null, 2));
+      setBackupMessage({
+        kind: "ok",
+        text: `已导出 ${Object.keys(data).length} 项配置到 ${path}`,
+      });
+    } catch (err) {
+      setBackupMessage({ kind: "error", text: `导出失败：${String(err)}` });
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    setBackupMessage(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const { applied, skipped } = await importSettings(parsed);
+      const newShortcut = await reloadAllSettings();
+      try {
+        await updateClipShortcut(newShortcut);
+      } catch (err) {
+        setBackupMessage({
+          kind: "error",
+          text: `配置已导入但快捷键重新注册失败：${String(err)}`,
+        });
+        return;
+      }
+      const skippedText =
+        skipped.length > 0 ? `，忽略 ${skipped.length} 个未知字段` : "";
+      setBackupMessage({
+        kind: "ok",
+        text: `已导入 ${applied.length} 项配置${skippedText}`,
+      });
+    } catch (err) {
+      setBackupMessage({ kind: "error", text: `导入失败：${String(err)}` });
+    }
   };
 
   return (
@@ -622,6 +735,59 @@ export const SettingsPage = () => {
             onBlur={handlePromptBlur}
             className="w-full h-24 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-md p-2 resize-none focus:outline-none focus:border-blue-400"
           />
+        </section>
+        )}
+
+        {activeTab === "backup" && (
+        <section className="bg-white rounded-lg border border-neutral-200 p-4 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold mb-1">导出配置</h2>
+            <p className="text-xs text-neutral-500 mb-2">
+              把当前所有设置（包括 API Key、快捷键、Prompt 等）打包为 JSON 文件保存到本地。
+            </p>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="text-xs px-3 py-1.5 rounded-md border border-neutral-300 bg-neutral-50 hover:bg-neutral-100 text-neutral-700"
+            >
+              导出为 JSON
+            </button>
+          </div>
+
+          <div>
+            <h2 className="text-sm font-semibold mb-1">导入配置</h2>
+            <p className="text-xs text-neutral-500 mb-2">
+              从之前导出的 JSON 文件恢复设置。文件中存在的字段会覆盖当前值，未在文件中的字段保持不变。
+            </p>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) await handleImportFile(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              className="text-xs px-3 py-1.5 rounded-md border border-neutral-300 bg-neutral-50 hover:bg-neutral-100 text-neutral-700"
+            >
+              选择文件…
+            </button>
+          </div>
+
+          {backupMessage && (
+            <p
+              className={`text-xs ${
+                backupMessage.kind === "ok" ? "text-green-600" : "text-red-500"
+              }`}
+            >
+              {backupMessage.text}
+            </p>
+          )}
         </section>
         )}
       </main>

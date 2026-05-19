@@ -205,3 +205,57 @@ export async function setPresetPrompt(prompt: string): Promise<void> {
   await store.set(PRESET_PROMPT_KEY, prompt);
   await store.save();
 }
+
+// 允许导入/导出的所有键（含旧 dashscope 字段，便于跨版本迁移）。
+const EXPORT_KEYS = [
+  RECOGNITION_MODE_KEY,
+  LLM_PROVIDER_KEY,
+  ANTHROPIC_BASE_URL_KEY,
+  ANTHROPIC_AUTH_TOKEN_KEY,
+  CLAUDE_CLI_PATH_KEY,
+  SESSION_DIR_KEY,
+  PRESET_PROMPT_KEY,
+  LEGACY_DASHSCOPE_BASE_URL_KEY,
+  LEGACY_DASHSCOPE_API_KEY_KEY,
+  LEGACY_DASHSCOPE_MODEL_KEY,
+  OPENAI_BASE_URL_KEY,
+  OPENAI_API_KEY_KEY,
+  OPENAI_MODEL_KEY,
+  CLIP_SHORTCUT_KEY,
+  CF_BASE_URL_KEY,
+  CF_AUTH_KEY,
+  CF_BYOK_ALIAS_KEY,
+  CF_MODEL_KEY,
+] as const;
+
+const EXPORT_KEY_SET = new Set<string>(EXPORT_KEYS);
+
+export async function exportSettings(): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const key of EXPORT_KEYS) {
+    const value = await store.get(key);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+export async function importSettings(
+  data: unknown
+): Promise<{ applied: string[]; skipped: string[] }> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("配置文件格式错误：根节点必须是 JSON 对象");
+  }
+  const obj = data as Record<string, unknown>;
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    if (!EXPORT_KEY_SET.has(key)) {
+      skipped.push(key);
+      continue;
+    }
+    await store.set(key, value);
+    applied.push(key);
+  }
+  await store.save();
+  return { applied, skipped };
+}

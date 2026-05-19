@@ -21,6 +21,7 @@ pub fn run() {
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_store::Builder::new().build())
+    .plugin(tauri_plugin_dialog::init())
     .plugin(
       LogBuilder::default()
         .targets([
@@ -41,7 +42,8 @@ pub fn run() {
       ask_llm_about_image,
       open_llm_result_window,
       open_settings_window,
-      update_clip_shortcut
+      update_clip_shortcut,
+      write_text_file
     ])
     .on_window_event(|window, event| {
       // settings / llm-result 窗口点红叉时隐藏而非销毁，

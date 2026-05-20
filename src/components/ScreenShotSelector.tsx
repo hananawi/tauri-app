@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Konva from "konva";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
@@ -62,9 +62,9 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
     setStart(null);
   };
 
-  useEventListener("keypress", (event) => {
+  // 确认当前选区：换算到图片像素后回调 onFinish。选区无效则不响应。
+  const finishSelection = () => {
     if (
-      event.key !== "Enter" ||
       !rect ||
       rect.width <= 0 ||
       rect.height <= 0 ||
@@ -85,7 +85,29 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
       height: Math.round(rect.height * scaleY),
     };
     onFinish(imgRect, { width: rect.width, height: rect.height });
+  };
+
+  // Enter 确认选区。useEventListener 内部用 ref 持有 handler，闭包始终取最新值。
+  useEventListener("keypress", (event) => {
+    if (event.key === "Enter") {
+      finishSelection();
+    }
   });
+
+  // 截图中再次按 clip 快捷键时也确认选区。用 ref 持有最新 finishSelection，
+  // 避免 listen 的空依赖闭包捕获到过期的选区状态。
+  const finishSelectionRef = useRef(finishSelection);
+  finishSelectionRef.current = finishSelection;
+
+  useEffect(() => {
+    const removeListenerPromise = listen("clip-shortcut-again", () => {
+      finishSelectionRef.current();
+    });
+
+    return () => {
+      removeListenerPromise.then((removeListener) => removeListener());
+    };
+  }, []);
 
   // 截图开始：取窗口逻辑尺寸，并通过 clipimg:// 协议加载冻屏整图。
   useEffect(() => {

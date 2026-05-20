@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  Manager,
+  Emitter, Manager,
 };
 
 use crate::ocr;
@@ -47,6 +47,9 @@ fn register_global_shortcut(
           let mut state = state.lock().unwrap();
           if !state.is_clipping {
             state.set_is_clipping(app, true);
+          } else {
+            // 已在截图中：不重复触发冻屏，改为通知前端确认当前选区进入下一步。
+            let _ = app.emit("clip-shortcut-again", ());
           }
         }
       })

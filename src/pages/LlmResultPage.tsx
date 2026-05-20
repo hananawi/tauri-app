@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,9 +38,13 @@ export const LlmResultPage = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const refresh = async () => {
+    // 每个结果窗口有唯一 label；后端按 label 定向派发流式事件，
+    // 故多个窗口可同时存在、各自接收自己请求的输出而互不干扰。
+    const windowLabel = getCurrentWindow().label;
+
+    const start = async () => {
       if (askingRef.current) return;
-      const path = await takePendingCapture();
+      const path = await takePendingCapture(windowLabel);
       if (!path) return;
 
       askingRef.current = true;
@@ -77,6 +82,7 @@ export const LlmResultPage = () => {
           getPresetPrompt(),
         ]);
         await askLlmAboutImage({
+          windowLabel,
           imagePath: path,
           prompt,
           provider,
@@ -100,10 +106,9 @@ export const LlmResultPage = () => {
       }
     };
 
-    void refresh();
+    void start();
 
     const unlistenPromises = [
-      listen("llm-result:refresh", () => void refresh()),
       listen<string>("llm-result:chunk", (e) => {
         setStatus("streaming");
         setText((prev) => prev + e.payload);

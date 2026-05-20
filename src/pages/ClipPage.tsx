@@ -36,8 +36,8 @@ export const ClipPage = () => {
     const mode = await getRecognitionMode();
 
     if (mode === "llm") {
-      await saveCaptureToTemp(rect);
-      await openLlmResultWindow();
+      const imagePath = await saveCaptureToTemp(rect);
+      await openLlmResultWindow(imagePath);
       stopClipping();
       return;
     }

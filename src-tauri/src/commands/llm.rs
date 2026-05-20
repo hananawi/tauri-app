@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_http::reqwest;
 use tauri_plugin_log::log;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
@@ -55,39 +56,27 @@ pub async fn save_capture_to_temp(
 
   let path_str = path.to_string_lossy().to_string();
   log::info!("[llm] 截图已保存到临时文件：{path_str}");
-
-  // 记录本次截图为待处理图片，并取出上一次的截图路径准备删除。
-  let old_image = {
-    let mut guard = state.lock().map_err(|e| e.to_string())?;
-    guard.set_pending_llm_image(path_str.clone());
-    guard.replace_last_llm_image(path_str.clone())
-  };
-  if let Some(old) = old_image {
-    if old != path_str {
-      match std::fs::remove_file(&old) {
-        Ok(()) => log::info!("[llm] 已删除上一次截图：{old}"),
-        Err(e) => log::warn!("[llm] 删除上一次截图失败：{old}（{e}）"),
-      }
-    }
-  }
-
+  // 临时文件由结果窗口对应的 ask_llm_about_image 在请求结束后自行删除。
   Ok(path_str)
 }
 
+/// 取出某个结果窗口待处理的截图路径。取走即从待处理表移除，故只会被消费一次。
 #[tauri::command]
 pub fn take_pending_capture(
+  window_label: String,
   state: State<'_, Mutex<AppState>>,
 ) -> Result<Option<String>, String> {
   Ok(
     state
       .lock()
       .map_err(|e| e.to_string())?
-      .take_pending_llm_image(),
+      .take_pending_llm_image(&window_label),
   )
 }
 
 #[tauri::command]
 pub async fn ask_llm_about_image(
+  window_label: String,
   image_path: String,
   prompt: String,
   provider: String,
@@ -104,50 +93,107 @@ pub async fn ask_llm_about_image(
   cloudflare_model: String,
   app: AppHandle,
   http: State<'_, HttpClient>,
+  state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
   log::info!(
-    "[llm] 收到问答请求，provider={provider}，图片：{image_path}"
+    "[llm] 收到问答请求，窗口={window_label}，provider={provider}，图片：{image_path}"
   );
-  let result = match provider.as_str() {
-    "cli" => {
-      stream_llm_cli(&image_path, &prompt, &cli_path, &session_dir, &app).await
-    }
-    "openai" => {
-      stream_llm_openai_compat(
-        &image_path,
-        &prompt,
-        &openai_base_url,
-        &openai_api_key,
-        &openai_model,
-        &app,
-        &http,
-      )
-      .await
-    }
-    "cloudflare" => {
-      stream_llm_cloudflare(
-        &image_path,
-        &prompt,
-        &cloudflare_base_url,
-        &cloudflare_aig_authorization,
-        &cloudflare_aig_byok_alias,
-        &cloudflare_model,
-        &app,
-        &http,
-      )
-      .await
-    }
-    _ => {
-      stream_llm(&image_path, &prompt, &base_url, &auth_token, &app, &http)
-        .await
-    }
+
+  // 把流式请求放进独立的可中止 task：结果窗口关闭时凭 AbortHandle 中止它，
+  // task 被丢弃会断开 HTTP 连接 / 丢弃 CLI 子进程（配合 kill_on_drop 杀掉进程），
+  // 避免用户关掉窗口后请求仍在后台空跑、白白消耗 token 或 CPU。
+  let client = http.client();
+  let task = {
+    let app = app.clone();
+    let label = window_label.clone();
+    let image_path = image_path.clone();
+    tokio::spawn(async move {
+      let label = label.as_str();
+      match provider.as_str() {
+        "cli" => {
+          stream_llm_cli(
+            label,
+            &image_path,
+            &prompt,
+            &cli_path,
+            &session_dir,
+            &app,
+          )
+          .await
+        }
+        "openai" => {
+          stream_llm_openai_compat(
+            label,
+            &image_path,
+            &prompt,
+            &openai_base_url,
+            &openai_api_key,
+            &openai_model,
+            &app,
+            &client,
+          )
+          .await
+        }
+        "cloudflare" => {
+          stream_llm_cloudflare(
+            label,
+            &image_path,
+            &prompt,
+            &cloudflare_base_url,
+            &cloudflare_aig_authorization,
+            &cloudflare_aig_byok_alias,
+            &cloudflare_model,
+            &app,
+            &client,
+          )
+          .await
+        }
+        _ => {
+          stream_llm(
+            label,
+            &image_path,
+            &prompt,
+            &base_url,
+            &auth_token,
+            &app,
+            &client,
+          )
+          .await
+        }
+      }
+    })
   };
+
+  // 注册中止句柄，供窗口 Destroyed 事件取用。
+  if let Ok(mut guard) = state.lock() {
+    guard.register_llm_task(window_label.clone(), task.abort_handle());
+  }
+
+  let result = match task.await {
+    Ok(inner) => inner,
+    Err(join_err) if join_err.is_cancelled() => {
+      log::info!("[llm] 结果窗口已关闭，问答请求已中止：{window_label}");
+      Ok(())
+    }
+    Err(join_err) => Err(format!("问答任务异常退出：{join_err}")),
+  };
+
+  // 注销中止句柄（窗口 Destroyed 事件可能已先一步取走，take 不到也无妨）。
+  if let Ok(mut guard) = state.lock() {
+    guard.take_llm_task(&window_label);
+  }
+
   match &result {
     Ok(()) => log::info!("[llm] 问答流程结束"),
     Err(err) => {
       log::error!("[llm] 问答失败：{err}");
-      let _ = app.emit("llm-result:error", err.clone());
+      let _ =
+        app.emit_to(window_label.as_str(), "llm-result:error", err.clone());
     }
+  }
+  // 请求结束（无论成败 / 中止）即删除本次截图临时文件，避免缓存目录堆积。
+  if let Err(e) = std::fs::remove_file(&image_path) {
+    log::warn!("[llm] 删除临时截图失败：{image_path}（{e}）");
   }
   result
 }
@@ -155,6 +201,7 @@ pub async fn ask_llm_about_image(
 /// 通过本地 Claude Code CLI 的 `-p` 参数提问。
 /// 输入仅为纯文本：把截图的绝对路径写进 prompt，由 CLI 自行读取图片。
 async fn stream_llm_cli(
+  label: &str,
   image_path: &str,
   prompt: &str,
   cli_path: &str,
@@ -219,6 +266,8 @@ async fn stream_llm_cli(
     session_path.display()
   );
   let mut cmd = tokio::process::Command::new(program);
+  // 任务被中止（结果窗口关闭）时，Child 随 future 一起丢弃即杀掉 CLI 子进程。
+  cmd.kill_on_drop(true);
   cmd.current_dir(&session_path);
   for (k, v) in &envs {
     cmd.env(k, v);
@@ -275,7 +324,7 @@ async fn stream_llm_cli(
           .and_then(|t| t.as_str())
         {
           delta_count += 1;
-          let _ = app.emit("llm-result:chunk", text);
+          let _ = app.emit_to(label, "llm-result:chunk", text);
         }
       }
       // 最终结果：报错时返回错误；若没收到任何增量则用完整文本兜底。
@@ -292,7 +341,7 @@ async fn stream_llm_cli(
           });
         }
         if delta_count == 0 && !result_text.is_empty() {
-          let _ = app.emit("llm-result:chunk", result_text);
+          let _ = app.emit_to(label, "llm-result:chunk", result_text);
         }
       }
       _ => {}
@@ -314,17 +363,18 @@ async fn stream_llm_cli(
   }
 
   log::info!("[llm] CLI 流程结束，共 {delta_count} 段增量输出");
-  let _ = app.emit("llm-result:done", ());
+  let _ = app.emit_to(label, "llm-result:done", ());
   Ok(())
 }
 
 async fn stream_llm(
+  label: &str,
   image_path: &str,
   prompt: &str,
   base_url: &str,
   auth_token: &str,
   app: &AppHandle,
-  http: &HttpClient,
+  client: &reqwest::Client,
 ) -> Result<(), String> {
   if auth_token.is_empty() {
     return Err("未配置 Auth Token，请在设置中填写".to_string());
@@ -365,7 +415,6 @@ async fn stream_llm(
   // CC 每次请求都会带一个新的 session id，这里同样每请求生成一次。
   let session_id = uuid::Uuid::new_v4().to_string();
   log::info!("[llm] 请求 {endpoint}，模型 {LLM_MODEL}");
-  let client = http.client();
   let mut resp = client
     .post(endpoint)
     .header("accept", "application/json")
@@ -407,7 +456,7 @@ async fn stream_llm(
 
     while let Some(idx) = buffer.find("\n\n") {
       let event_block: String = buffer.drain(..idx + 2).collect();
-      chunk_count += handle_sse_block(&event_block, app);
+      chunk_count += handle_sse_block(&event_block, label, app);
     }
   }
 
@@ -419,13 +468,14 @@ async fn stream_llm(
 /// 适用于 OpenAI 官方、阿里 DashScope `/compatible-mode/v1`、Azure OpenAI、
 /// OpenRouter、SiliconFlow、智谱 GLM-4V、Moonshot 等任何 OpenAI 兼容 vision 端点。
 async fn stream_llm_openai_compat(
+  label: &str,
   image_path: &str,
   prompt: &str,
   base_url: &str,
   api_key: &str,
   model: &str,
   app: &AppHandle,
-  http: &HttpClient,
+  client: &reqwest::Client,
 ) -> Result<(), String> {
   if api_key.is_empty() {
     return Err("未配置 API Key，请在设置中填写".to_string());
@@ -466,7 +516,6 @@ async fn stream_llm_openai_compat(
     format!("{trimmed}/v1/chat/completions")
   };
   log::info!("[llm] 请求 OpenAI {endpoint}，模型 {model}");
-  let client = http.client();
   let mut resp = client
     .post(endpoint)
     .header("accept", "text/event-stream")
@@ -494,12 +543,12 @@ async fn stream_llm_openai_compat(
 
     while let Some(idx) = buffer.find("\n\n") {
       let event_block: String = buffer.drain(..idx + 2).collect();
-      chunk_count += handle_openai_sse_block(&event_block, app);
+      chunk_count += handle_openai_sse_block(&event_block, label, app);
     }
   }
 
   log::info!("[llm] OpenAI 流式响应结束，共 {chunk_count} 个文本增量");
-  let _ = app.emit("llm-result:done", ());
+  let _ = app.emit_to(label, "llm-result:done", ());
   Ok(())
 }
 
@@ -510,6 +559,7 @@ async fn stream_llm_openai_compat(
 /// 鉴权走 `cf-aig-authorization`，下游 provider 的 API key 由
 /// `cf-aig-byok-alias` 指定的别名在网关侧注入。
 async fn stream_llm_cloudflare(
+  label: &str,
   image_path: &str,
   prompt: &str,
   base_url: &str,
@@ -517,7 +567,7 @@ async fn stream_llm_cloudflare(
   byok_alias: &str,
   model: &str,
   app: &AppHandle,
-  http: &HttpClient,
+  client: &reqwest::Client,
 ) -> Result<(), String> {
   if base_url.is_empty() {
     return Err("未配置 Cloudflare Base URL，请在设置中填写".to_string());
@@ -565,7 +615,6 @@ async fn stream_llm_cloudflare(
     format!("Bearer {aig_auth}")
   };
 
-  let client = http.client();
   let mut resp = client
     .post(endpoint)
     .header("accept", "text/event-stream")
@@ -594,18 +643,22 @@ async fn stream_llm_cloudflare(
 
     while let Some(idx) = buffer.find("\n\n") {
       let event_block: String = buffer.drain(..idx + 2).collect();
-      chunk_count += handle_openai_sse_block(&event_block, app);
+      chunk_count += handle_openai_sse_block(&event_block, label, app);
     }
   }
 
   log::info!("[llm] Cloudflare 流式响应结束，共 {chunk_count} 个文本增量");
-  let _ = app.emit("llm-result:done", ());
+  let _ = app.emit_to(label, "llm-result:done", ());
   Ok(())
 }
 
 /// 解析 OpenAI 兼容 SSE 块：每行 `data: {...}`，结束标记 `data: [DONE]`，
 /// 文本增量在 `choices[0].delta.content`。
-fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
+fn handle_openai_sse_block(
+  block: &str,
+  label: &str,
+  app: &AppHandle,
+) -> usize {
   let mut delta_count = 0usize;
   for line in block.lines() {
     let Some(data) = line.trim().strip_prefix("data:") else {
@@ -629,7 +682,7 @@ fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
         .and_then(|m| m.as_str())
         .unwrap_or("未知错误");
       log::error!("[llm] OpenAI 流内错误：{msg}");
-      let _ = app.emit("llm-result:error", msg);
+      let _ = app.emit_to(label, "llm-result:error", msg);
       continue;
     }
 
@@ -642,7 +695,7 @@ fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
     {
       if !text.is_empty() {
         delta_count += 1;
-        let _ = app.emit("llm-result:chunk", text);
+        let _ = app.emit_to(label, "llm-result:chunk", text);
       }
     }
   }
@@ -650,7 +703,7 @@ fn handle_openai_sse_block(block: &str, app: &AppHandle) -> usize {
 }
 
 /// 解析一个 SSE 事件块，返回其中产生的文本增量数量。
-fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
+fn handle_sse_block(block: &str, label: &str, app: &AppHandle) -> usize {
   let mut delta_count = 0usize;
   for line in block.lines() {
     let Some(data) = line.trim().strip_prefix("data:") else {
@@ -676,12 +729,12 @@ fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
           .and_then(|t| t.as_str())
         {
           delta_count += 1;
-          let _ = app.emit("llm-result:chunk", text);
+          let _ = app.emit_to(label, "llm-result:chunk", text);
         }
       }
       Some("message_stop") => {
         log::info!("[llm] 收到 message_stop");
-        let _ = app.emit("llm-result:done", ());
+        let _ = app.emit_to(label, "llm-result:done", ());
       }
       Some("error") => {
         let msg = json
@@ -690,7 +743,7 @@ fn handle_sse_block(block: &str, app: &AppHandle) -> usize {
           .and_then(|m| m.as_str())
           .unwrap_or("未知错误");
         log::error!("[llm] 流内错误：{msg}");
-        let _ = app.emit("llm-result:error", msg);
+        let _ = app.emit_to(label, "llm-result:error", msg);
       }
       _ => {}
     }

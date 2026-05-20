@@ -31,11 +31,15 @@ export async function saveCaptureToTemp(rect: PixelRect): Promise<string> {
   return invoke<string>("save_capture_to_temp", { rect });
 }
 
-export async function takePendingCapture(): Promise<string | null> {
-  return invoke<string | null>("take_pending_capture");
+/** 取出指定结果窗口待处理的截图路径（按窗口 label 区分，仅消费一次）。 */
+export async function takePendingCapture(
+  windowLabel: string
+): Promise<string | null> {
+  return invoke<string | null>("take_pending_capture", { windowLabel });
 }
 
 export async function askLlmAboutImage(args: {
+  windowLabel: string;
   imagePath: string;
   prompt: string;
   provider: string;
@@ -54,8 +58,9 @@ export async function askLlmAboutImage(args: {
   return invoke("ask_llm_about_image", args);
 }
 
-export async function openLlmResultWindow(): Promise<void> {
-  return invoke("open_llm_result_window");
+/** 为本次截图新建一个独立的识别结果窗口（多个窗口可并存）。 */
+export async function openLlmResultWindow(imagePath: string): Promise<void> {
+  return invoke("open_llm_result_window", { imagePath });
 }
 
 export async function openSettingsWindow(): Promise<void> {

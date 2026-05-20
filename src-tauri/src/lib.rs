@@ -62,14 +62,31 @@ pub fn run() {
       write_text_file
     ])
     .on_window_event(|window, event| {
-      // settings / llm-result 窗口点红叉时隐藏而非销毁，
-      // 否则下次再 get_webview_window 会找不到。
-      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        let label = window.label();
-        if label == "settings" || label == "llm-result" {
-          api.prevent_close();
-          let _ = window.hide();
+      use tauri::Manager;
+      match event {
+        // settings 窗口点红叉时隐藏而非销毁，否则下次再 get_webview_window
+        // 会找不到。llm-result-* 结果窗口是每次截图动态新建的，直接销毁即可。
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+          if window.label() == "settings" {
+            api.prevent_close();
+            let _ = window.hide();
+          }
         }
+        // 结果窗口被销毁：中止它仍在进行的 LLM 问答请求，
+        // 避免用户关掉窗口后请求仍在后台空跑。
+        tauri::WindowEvent::Destroyed => {
+          let label = window.label();
+          if label.starts_with("llm-result-") {
+            if let Some(state) = window.try_state::<Mutex<AppState>>() {
+              if let Ok(mut guard) = state.lock() {
+                if let Some(handle) = guard.take_llm_task(label) {
+                  handle.abort();
+                }
+              }
+            }
+          }
+        }
+        _ => {}
       }
     })
     .setup(|app| {

@@ -5,11 +5,10 @@ import {
   PropsType as ScreenShotSelectorPropsType,
 } from "../components/ScreenShotSelector";
 import {
-  captureScreen,
-  captureToTemp,
-  detectText,
   genAudioFromText,
   openLlmResultWindow,
+  recognizeCapture,
+  saveCaptureToTemp,
   stopClipping,
 } from "../lib/commands";
 import { getRecognitionMode } from "../lib/settings";
@@ -29,25 +28,24 @@ export const ClipPage = () => {
   }, []);
 
   const handleFinish: ScreenShotSelectorPropsType["onFinish"] = async (
-    rect
+    rect,
+    display
   ) => {
-    info(
-      `info ScreenShotSelector finished, rect: ${JSON.stringify(rect, null, 2)}`
-    );
+    info(`ScreenShotSelector finished, imgRect: ${JSON.stringify(rect)}`);
 
     const mode = await getRecognitionMode();
 
     if (mode === "llm") {
-      await captureToTemp(rect);
+      await saveCaptureToTemp(rect);
       await openLlmResultWindow();
       stopClipping();
       return;
     }
 
-    const results = await detectText(rect);
-    captureScreen(rect);
+    // OCR 模式：recognize_capture 会一并把截图写入剪贴板。
+    const results = await recognizeCapture(rect, display.width, display.height);
 
-    info(`Detected text: ${JSON.stringify(results, null, 2)}`);
+    info(`Detected text: ${JSON.stringify(results)}`);
     setDetectedItems(results);
     genAudioFromText(results.map((item) => item.text).join(" "));
   };

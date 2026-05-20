@@ -1,12 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DetectionResultItem, Rect } from "../types/clip";
+import type { DetectionResultItem, PixelRect } from "../types/clip";
 
-export async function detectText(rect: Rect): Promise<DetectionResultItem[]> {
-  return invoke<DetectionResultItem[]>("detect_text", { rect });
-}
-
-export async function captureScreen(rect: Rect): Promise<void> {
-  return invoke("capture_screen", { rect });
+/** 识别选区：后端裁冻屏图 → 写剪贴板 → OCR。display* 为选区逻辑尺寸。 */
+export async function recognizeCapture(
+  rect: PixelRect,
+  displayWidth: number,
+  displayHeight: number
+): Promise<DetectionResultItem[]> {
+  return invoke<DetectionResultItem[]>("recognize_capture", {
+    rect,
+    displayWidth,
+    displayHeight,
+  });
 }
 
 export async function genAudioFromText(text: string): Promise<void> {
@@ -21,8 +26,9 @@ export async function stopClipping(): Promise<void> {
   return invoke("stop_clipping");
 }
 
-export async function captureToTemp(rect: Rect): Promise<string> {
-  return invoke<string>("capture_to_temp", { rect });
+/** 把冻屏图按选区裁剪后存临时文件，返回路径（供 LLM 问答读取）。 */
+export async function saveCaptureToTemp(rect: PixelRect): Promise<string> {
+  return invoke<string>("save_capture_to_temp", { rect });
 }
 
 export async function takePendingCapture(): Promise<string | null> {

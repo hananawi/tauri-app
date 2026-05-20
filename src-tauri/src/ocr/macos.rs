@@ -1,4 +1,4 @@
-//! macOS 平台实现：ScreenCaptureKit 截图 + Vision OCR。
+//! macOS 平台实现：ScreenCaptureKit 抓屏 + Vision OCR。
 
 mod capture;
 mod detect;
@@ -8,7 +8,7 @@ use block2::RcBlock;
 use objc2::AnyThread;
 use objc2_vision::VNRecognizeTextRequest;
 
-pub use capture::{capture_screen_png, capture_screen_to_clipboard};
+pub use capture::{capture_fullscreen, png_to_clipboard};
 pub use detect::detect_text;
 pub use tray_fix::install_tray_click_fix;
 

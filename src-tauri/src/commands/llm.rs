@@ -8,7 +8,7 @@ use tauri_plugin_log::log;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 use crate::http_client::HttpClient;
-use crate::ocr::{self, Rect};
+use crate::ocr::{self, PixelRect};
 use crate::state::AppState;
 
 // base_url / auth_token 由前端从设置中读取并传入。
@@ -25,16 +25,19 @@ const CC_ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,context-1
 const CC_STAINLESS_PACKAGE_VERSION: &str = "0.94.0";
 const CC_STAINLESS_RUNTIME_VERSION: &str = "v24.3.0";
 
+/// 把冻屏整图按选区裁剪后存到临时文件，返回文件绝对路径（供 LLM 问答读取）。
 #[tauri::command]
-pub async fn capture_to_temp(
-  rect: Option<Rect>,
+pub async fn save_capture_to_temp(
+  rect: PixelRect,
   app: AppHandle,
   state: State<'_, Mutex<AppState>>,
 ) -> Result<String, String> {
-  let rect = rect.ok_or("缺少截图区域")?;
-  log::info!("[llm] 开始截图，区域 {rect:?}");
-  let png = ocr::capture_screen_png(rect)?;
-  log::info!("[llm] 截图完成，PNG {} 字节", png.len());
+  let png = {
+    let guard = state.lock().map_err(|e| e.to_string())?;
+    guard.clone_frozen_capture()?
+  };
+  let cropped = ocr::crop_png(&png, rect)?;
+  log::info!("[llm] 裁剪截图完成，PNG {} 字节", cropped.len());
 
   let dir = app
     .path()
@@ -48,7 +51,7 @@ pub async fn capture_to_temp(
     .map_err(|e| e.to_string())?
     .as_millis();
   let path = dir.join(format!("capture-{ts}.png"));
-  std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+  std::fs::write(&path, &cropped).map_err(|e| e.to_string())?;
 
   let path_str = path.to_string_lossy().to_string();
   log::info!("[llm] 截图已保存到临时文件：{path_str}");

@@ -1,22 +1,42 @@
 //! Windows 平台实现：
-//! - 截图：xcap 拿到 RGBA 全屏图，按 rect 在 monitor 局部坐标内 crop。
-//! - 剪贴板写图：arboard::Clipboard::set_image（直接吃 RGBA）。
+//! - 抓屏：xcap 抓目标显示器整屏，编码成 PNG（冻屏模式下用它当底图）。
+//! - 剪贴板写图：PNG 解码成 RGBA 后交给 arboard。
 //! - OCR：不做本地识别；Windows 走云端 LLM（DashScope / Claude vision），
 //!   `detect_text` 直接返回空，前端不要走 OCR overlay 流程。
-//!
-//! 注意：rect 假定为虚拟桌面物理像素坐标（与前端 `winPos + selection` 一致）。
-//! HiDPI 下前端有 logical/physical 混用的老问题，本模块不试图修。
 
-use image::{GenericImageView, ImageEncoder, RgbaImage};
+use image::{ImageEncoder, RgbaImage};
 
-use super::{DetectionResultItem, OcrOptions, Rect};
+use super::{DetectionResultItem, OcrOptions};
 
-pub fn capture_screen_png(rect: Rect) -> Result<Vec<u8>, String> {
-  let img = capture_rect_rgba(rect)?;
+/// 抓取某个显示器的整屏，返回 PNG 字节。
+pub fn capture_fullscreen(
+  monitor: &tauri::Monitor,
+) -> Result<Vec<u8>, String> {
+  // Tauri 给的是物理像素坐标，xcap 同样按物理像素枚举显示器。
+  let pos = monitor.position();
+  let monitors =
+    xcap::Monitor::all().map_err(|e| format!("枚举显示器失败：{e}"))?;
+  if monitors.is_empty() {
+    return Err("找不到任何显示器".to_string());
+  }
 
-  let mut bytes = Vec::with_capacity((img.width() * img.height() * 4) as usize);
-  let encoder = image::codecs::png::PngEncoder::new(&mut bytes);
-  encoder
+  let target = monitors
+    .iter()
+    .find(|m| {
+      pos.x >= m.x()
+        && pos.x < m.x() + m.width() as i32
+        && pos.y >= m.y()
+        && pos.y < m.y() + m.height() as i32
+    })
+    .unwrap_or(&monitors[0]);
+
+  let img: RgbaImage = target
+    .capture_image()
+    .map_err(|e| format!("xcap 截屏失败：{e}"))?;
+
+  let mut bytes =
+    Vec::with_capacity((img.width() * img.height() * 4) as usize);
+  image::codecs::png::PngEncoder::new(&mut bytes)
     .write_image(
       img.as_raw(),
       img.width(),
@@ -27,11 +47,13 @@ pub fn capture_screen_png(rect: Rect) -> Result<Vec<u8>, String> {
   Ok(bytes)
 }
 
-pub fn capture_screen_to_clipboard(rect: Rect) -> Result<(), String> {
-  let img = capture_rect_rgba(rect)?;
+/// 把 PNG 字节写入系统剪贴板（arboard 吃 RGBA，先解码）。
+pub fn png_to_clipboard(png: &[u8]) -> Result<(), String> {
+  let img = image::load_from_memory(png)
+    .map_err(|e| format!("解码截图失败：{e}"))?
+    .to_rgba8();
   let width = img.width() as usize;
   let height = img.height() as usize;
-  let bytes = img.into_raw();
 
   let mut clipboard =
     arboard::Clipboard::new().map_err(|e| format!("打开剪贴板失败：{e}"))?;
@@ -39,7 +61,7 @@ pub fn capture_screen_to_clipboard(rect: Rect) -> Result<(), String> {
     .set_image(arboard::ImageData {
       width,
       height,
-      bytes: bytes.into(),
+      bytes: img.into_raw().into(),
     })
     .map_err(|e| format!("无法写入剪贴板：{e}"))?;
   Ok(())
@@ -48,58 +70,15 @@ pub fn capture_screen_to_clipboard(rect: Rect) -> Result<(), String> {
 /// Windows 不做本地 OCR：识别需求统一走云端 LLM（详见 commands/llm.rs）。
 /// 这里给一个明确日志，前端拿到空数组时不要展示 overlay。
 pub fn detect_text(
-  _rect: Rect,
+  _png: &[u8],
+  _display_width: f64,
+  _display_height: f64,
   _options: &OcrOptions,
 ) -> Vec<DetectionResultItem> {
   eprintln!(
-    "[ocr] Windows 不提供本地 OCR；请改用 LLM 截图问答（capture_to_temp + ask_llm_about_image）"
+    "[ocr] Windows 不提供本地 OCR；请改用 LLM 截图问答（save_capture_to_temp + ask_llm_about_image）"
   );
   Vec::new()
-}
-
-/// 按 rect 找到对应 monitor，截全屏后 crop 出区域。
-/// xcap 不同版本下 capture_region API 名字会变，全屏 + crop 最稳。
-fn capture_rect_rgba(rect: Rect) -> Result<RgbaImage, String> {
-  let monitors =
-    xcap::Monitor::all().map_err(|e| format!("枚举显示器失败：{e}"))?;
-  if monitors.is_empty() {
-    return Err("找不到任何显示器".to_string());
-  }
-
-  let monitor = monitors
-    .iter()
-    .find(|m| {
-      let mx = m.x() as f64;
-      let my = m.y() as f64;
-      let mw = m.width() as f64;
-      let mh = m.height() as f64;
-      rect.x >= mx
-        && rect.x < mx + mw
-        && rect.y >= my
-        && rect.y < my + mh
-    })
-    .unwrap_or(&monitors[0]);
-
-  let mx = monitor.x() as f64;
-  let my = monitor.y() as f64;
-
-  let full = monitor
-    .capture_image()
-    .map_err(|e| format!("xcap 截屏失败：{e}"))?;
-
-  let local_x = (rect.x - mx).max(0.0).round() as u32;
-  let local_y = (rect.y - my).max(0.0).round() as u32;
-  let max_w = full.width().saturating_sub(local_x);
-  let max_h = full.height().saturating_sub(local_y);
-  let local_w = (rect.width.round() as u32).min(max_w);
-  let local_h = (rect.height.round() as u32).min(max_h);
-
-  if local_w == 0 || local_h == 0 {
-    return Err("截图区域为空或越界".to_string());
-  }
-
-  let view = full.view(local_x, local_y, local_w, local_h);
-  Ok(view.to_image())
 }
 
 pub fn warmup() {

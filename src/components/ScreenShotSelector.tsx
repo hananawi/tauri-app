@@ -1,19 +1,21 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Konva from "konva";
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
-import { Group, Layer, Rect, Stage } from "react-konva";
+import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
 import { useEventListener } from "usehooks-ts";
 import { copyText } from "../lib/commands";
-import { DetectionResultItem } from "../types/clip";
+import { DetectionResultItem, PixelRect } from "../types/clip";
 
 type Selection = { x: number; y: number; width: number; height: number };
+type StageSize = { width: number; height: number };
 
 export type PropsType = {
   detectedItems?: DetectionResultItem[];
-  onFinish?: (rect: Selection) => void;
+  onFinish?: (rect: PixelRect, display: StageSize) => void;
   onBlur?: () => void;
 };
 
@@ -22,10 +24,11 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
   onFinish,
   onBlur,
 }) => {
-  console.log("detectedItems", detectedItems);
-
   const [start, setStart] = useState<{ x: number; y: number } | null>(null);
   const [rect, setRect] = useState<Selection | null>(null);
+  // 冻屏整图 + 蒙层窗口的逻辑尺寸。两者都就绪后才渲染选区 UI。
+  const [frozenImg, setFrozenImg] = useState<HTMLImageElement | null>(null);
+  const [stageSize, setStageSize] = useState<StageSize | null>(null);
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pos = e.target.getStage()?.getPointerPosition();
@@ -59,33 +62,64 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
     setStart(null);
   };
 
-  useEventListener("keypress", async (event) => {
-    console.log("keypress event", event);
-
-    if (event.key === "Enter" && rect && onFinish) {
-      const win = getCurrentWindow();
-      const pos = await win.innerPosition();
-
-      console.log("rect position", pos, rect);
-
-      // Vision's SCScreenshotManager.captureImageInRect expects points (logical coords)
-      const screenRect: Selection = {
-        x: Math.round(pos.x + rect.x),
-        y: Math.round(pos.y + rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-      };
-      onFinish(screenRect);
+  useEventListener("keypress", (event) => {
+    if (
+      event.key !== "Enter" ||
+      !rect ||
+      rect.width <= 0 ||
+      rect.height <= 0 ||
+      !frozenImg ||
+      !stageSize ||
+      !onFinish
+    ) {
+      return;
     }
+
+    // 选区是 stage（逻辑）坐标；按 图片自然像素 / stage 尺寸 换算到图片像素。
+    const scaleX = frozenImg.naturalWidth / stageSize.width;
+    const scaleY = frozenImg.naturalHeight / stageSize.height;
+    const imgRect: PixelRect = {
+      x: Math.round(rect.x * scaleX),
+      y: Math.round(rect.y * scaleY),
+      width: Math.round(rect.width * scaleX),
+      height: Math.round(rect.height * scaleY),
+    };
+    onFinish(imgRect, { width: rect.width, height: rect.height });
   });
 
+  // 截图开始：取窗口逻辑尺寸，并通过 clipimg:// 协议加载冻屏整图。
+  useEffect(() => {
+    const removeListenerPromise = listen("window-will-show", async () => {
+      // 窗口已被后端 resize 到目标屏，取权威物理尺寸 + 缩放比算出逻辑尺寸。
+      const win = getCurrentWindow();
+      const [size, scale] = await Promise.all([
+        win.innerSize(),
+        win.scaleFactor(),
+      ]);
+      setStageSize({
+        width: Math.round(size.width / scale),
+        height: Math.round(size.height / scale),
+      });
+
+      // clipimg:// 从后端内存读冻屏整图；带时间戳绕过 webview 缓存。
+      const img = new window.Image();
+      img.onload = () => setFrozenImg(img);
+      img.onerror = () => console.error("加载冻屏图失败");
+      img.src = `${convertFileSrc("frozen", "clipimg")}?t=${Date.now()}`;
+    });
+
+    return () => {
+      removeListenerPromise.then((removeListener) => removeListener());
+    };
+  }, []);
+
+  // 截图结束：清空冻屏图与选区状态。
   useEffect(() => {
     const removeListenerPromise = listen("window-will-hide", () => {
-      console.log("window hide");
-
       flushSync(() => {
         setStart(null);
         setRect(null);
+        setFrozenImg(null);
         onBlur?.();
       });
     });
@@ -95,23 +129,39 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
     };
   }, []);
 
+  // 冻屏图未就绪前不渲染：窗口透明，与实时桌面无异，用户无感。
+  if (!frozenImg || !stageSize) {
+    return null;
+  }
+
   return (
     <Stage
-      width={window.screen.width}
-      height={window.screen.height}
+      width={stageSize.width}
+      height={stageSize.height}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      {/* 冻屏底图 */}
       <Layer listening={false}>
+        <KonvaImage
+          image={frozenImg}
+          width={stageSize.width}
+          height={stageSize.height}
+        />
+      </Layer>
+
+      <Layer listening={false}>
+        {/* 半透黑背景覆盖 */}
         <Rect
           x={0}
           y={0}
-          width={window.screen.width}
-          height={window.screen.height}
+          width={stageSize.width}
+          height={stageSize.height}
           fill="rgba(0, 0, 0, 0.3)"
         />
 
+        {/* 选区挖空（destination-out 露出下层冻屏底图） */}
         {rect && rect.width > 0 && rect.height > 0 && (
           <Rect
             x={rect.x}
@@ -123,7 +173,7 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
           />
         )}
 
-        {/* for overlay text */}
+        {/* OCR 识别结果显示 */}
         {rect && detectedItems && detectedItems.length > 0 ? (
           <Group x={rect.x} y={rect.y}>
             {detectedItems.map((item) => (
@@ -134,6 +184,7 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
           </Group>
         ) : null}
 
+        {/* 复制文字按钮 */}
         {rect && detectedItems && detectedItems.length > 0 && (
           <Group x={rect.x} y={rect.y + rect.height + 8}>
             <Html>
@@ -152,7 +203,7 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
         )}
       </Layer>
 
-      {/* for border */}
+      {/* 虚线边框 */}
       <Layer>
         {rect && rect.width > 0 && rect.height > 0 && (
           <Rect

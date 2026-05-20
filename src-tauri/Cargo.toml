@@ -34,6 +34,8 @@ rodio = "0.21.1"
 uuid = { version = "1", features = ["v4"] }
 # 跨平台剪贴板（mac 走 NSPasteboard，win 走 Win32），替代手写 objc 调用
 arboard = "3"
+# 跨平台图像编解码：用于裁剪内存里的冻屏 PNG
+image = "0.25"
 
 # macOS 专属：Apple 私有 / 系统框架绑定，Windows 上不解析
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -49,4 +51,3 @@ objc2-vision = "0.3.1"
 # Windows 专属：截图给 LLM 用（OCR 走云端大模型，不接 WinRT OCR）
 [target.'cfg(target_os = "windows")'.dependencies]
 xcap = "0.0.14"
-image = "0.25"

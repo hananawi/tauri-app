@@ -1,4 +1,4 @@
-//! 用 ScreenCaptureKit 抓屏。截图既要给 OCR 使用，也要走"截图→剪贴板"。
+//! 用 ScreenCaptureKit 抓屏。冻屏模式下抓的是目标显示器的整屏。
 
 use std::sync::mpsc;
 
@@ -16,7 +16,26 @@ use objc2_screen_capture_kit::SCScreenshotManager;
 
 use super::super::Rect;
 
-pub fn capture_screen_png(rect: Rect) -> Result<Vec<u8>, String> {
+/// 抓取某个显示器的整屏，返回 PNG 字节。
+pub fn capture_fullscreen(
+  monitor: &tauri::Monitor,
+) -> Result<Vec<u8>, String> {
+  // SCScreenshotManager 的 rect 用「点」（逻辑坐标）。Tauri 给的是物理像素，
+  // 除以缩放比换算成逻辑坐标。
+  let scale = monitor.scale_factor();
+  let pos = monitor.position();
+  let size = monitor.size();
+  let rect = Rect {
+    x: pos.x as f64 / scale,
+    y: pos.y as f64 / scale,
+    width: size.width as f64 / scale,
+    height: size.height as f64 / scale,
+  };
+  capture_rect_png(rect)
+}
+
+/// 抓取指定区域，返回 PNG 字节。
+fn capture_rect_png(rect: Rect) -> Result<Vec<u8>, String> {
   ensure_screen_permission().map_err(|e| e.to_string())?;
   let cg_rect = rect_to_cg(rect);
 
@@ -74,11 +93,10 @@ pub fn capture_screen_png(rect: Rect) -> Result<Vec<u8>, String> {
   }
 }
 
-pub fn capture_screen_to_clipboard(rect: Rect) -> Result<(), String> {
-  let png_data = capture_screen_png(rect)?;
-
+/// 把 PNG 字节写入系统剪贴板。
+pub fn png_to_clipboard(png: &[u8]) -> Result<(), String> {
   unsafe {
-    let ns_data = NSData::with_bytes(&png_data);
+    let ns_data = NSData::with_bytes(png);
     let pasteboard = NSPasteboard::generalPasteboard();
     pasteboard.clearContents();
 

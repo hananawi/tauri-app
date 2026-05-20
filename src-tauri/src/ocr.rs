@@ -125,6 +125,11 @@ fn setup_mask_inner(app: &tauri::AppHandle) -> Result<(), String> {
     ))
     .map_err(|e| e.to_string())?;
   window.set_always_on_top(true).map_err(|e| e.to_string())?;
+  // macOS 上全屏 app 处于独立的 Space，蒙层窗口默认只在自己的 Space 显示，
+  // 盖不住全屏应用。让它加入所有 Space（含全屏 Space），截图才能覆盖全屏 app。
+  window
+    .set_visible_on_all_workspaces(true)
+    .map_err(|e| e.to_string())?;
 
   Ok(())
 }

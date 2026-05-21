@@ -1,4 +1,5 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { IS_WINDOWS } from "./platform";
 import { DEFAULT_PRESET_PROMPT } from "./prompt";
 
 export type RecognitionMode = "ocr" | "llm";
@@ -39,6 +40,9 @@ export const DEFAULT_CLIP_SHORTCUT = "CommandOrControl+Shift+KeyR";
 const store = new LazyStore("settings.json");
 
 export async function getRecognitionMode(): Promise<RecognitionMode> {
+  // Windows 无本地 OCR（Vision 是 macOS 框架），强制走 LLM —— 即使存储里
+  // 残留 "ocr"（旧配置或导入而来）也忽略，避免截图后走识别空跑、蒙层卡死。
+  if (IS_WINDOWS) return "llm";
   const mode = await store.get<RecognitionMode>(RECOGNITION_MODE_KEY);
   return mode ?? DEFAULT_MODE;
 }
@@ -60,6 +64,9 @@ export async function getLlmProvider(): Promise<LlmProvider> {
     provider === "openai" ||
     provider === "cloudflare"
   ) {
+    // Windows 无法定位 npm 装的 claude.cmd（Command 只认 .exe），本地 CLI
+    // 走不通，残留 "cli" 配置一律回退到默认 provider。
+    if (provider === "cli" && IS_WINDOWS) return DEFAULT_PROVIDER;
     return provider;
   }
   return DEFAULT_PROVIDER;

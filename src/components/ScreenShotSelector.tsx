@@ -88,7 +88,8 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
   };
 
   // Enter 确认选区。useEventListener 内部用 ref 持有 handler，闭包始终取最新值。
-  useEventListener("keypress", (event) => {
+  // 用 keydown 而非已废弃的 keypress：keypress 在部分 WebView 下不触发。
+  useEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       finishSelection();
     }

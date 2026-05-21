@@ -118,7 +118,9 @@ fn show_mask_window(
   position_window(&window, monitor)?;
   app.emit("window-will-show", ()).map_err(|e| e.to_string())?;
   window.show().map_err(|e| e.to_string())?;
-  window.set_focus().map_err(|e| e.to_string())?;
+  // 平台相关地强制夺取键盘焦点：Windows 上全局快捷键触发时本进程在后台，
+  // 普通 set_focus 会被系统拦截，导致蒙层里按 Enter / Esc 无反应。
+  imp::focus_clip_window(&window)?;
   Ok(())
 }
 

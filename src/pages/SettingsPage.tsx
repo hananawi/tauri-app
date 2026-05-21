@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { updateClipShortcut, writeTextFile } from "../lib/commands";
+import { IS_MAC, IS_WINDOWS } from "../lib/platform";
 import {
   DEFAULT_CLIP_SHORTCUT,
   exportSettings,
@@ -38,9 +39,6 @@ import {
   setRecognitionMode,
   setSessionDir,
 } from "../lib/settings";
-
-const IS_MAC =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform);
 
 const MODIFIER_CODES = new Set([
   "MetaLeft",
@@ -476,26 +474,40 @@ export const SettingsPage = () => {
         <section className="bg-white rounded-lg border border-neutral-200 p-4">
           <h2 className="text-sm font-semibold mb-3">截图识别方式</h2>
           <div className="space-y-2">
-            {MODE_OPTIONS.map((opt) => (
-              <label
-                key={opt.value}
-                className="flex items-start gap-2 cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name="recognition-mode"
-                  className="mt-1"
-                  checked={mode === opt.value}
-                  onChange={() => handleModeChange(opt.value)}
-                />
-                <span>
-                  <span className="text-sm font-medium">{opt.label}</span>
-                  <span className="block text-xs text-neutral-500">
-                    {opt.desc}
+            {MODE_OPTIONS.map((opt) => {
+              // Windows 无本地 OCR，禁用该选项；其余平台正常可选。
+              const disabled = IS_WINDOWS && opt.value === "ocr";
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-2 ${
+                    disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="recognition-mode"
+                    className="mt-1"
+                    checked={mode === opt.value}
+                    disabled={disabled}
+                    onChange={() => handleModeChange(opt.value)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">
+                      {opt.label}
+                      {disabled && (
+                        <span className="ml-1 text-xs font-normal text-neutral-400">
+                          （仅 macOS）
+                        </span>
+                      )}
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      {opt.desc}
+                    </span>
                   </span>
-                </span>
-              </label>
-            ))}
+                </label>
+              );
+            })}
           </div>
         </section>
         )}
@@ -508,26 +520,40 @@ export const SettingsPage = () => {
             <span className="text-xs font-medium text-neutral-600">
               调用方式
             </span>
-            {PROVIDER_OPTIONS.map((opt) => (
-              <label
-                key={opt.value}
-                className="flex items-start gap-2 cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name="llm-provider"
-                  className="mt-1"
-                  checked={provider === opt.value}
-                  onChange={() => handleProviderChange(opt.value)}
-                />
-                <span>
-                  <span className="text-sm font-medium">{opt.label}</span>
-                  <span className="block text-xs text-neutral-500">
-                    {opt.desc}
+            {PROVIDER_OPTIONS.map((opt) => {
+              // Windows 跑不了本地 Claude CLI，禁用该选项。
+              const disabled = IS_WINDOWS && opt.value === "cli";
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-2 ${
+                    disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="llm-provider"
+                    className="mt-1"
+                    checked={provider === opt.value}
+                    disabled={disabled}
+                    onChange={() => handleProviderChange(opt.value)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">
+                      {opt.label}
+                      {disabled && (
+                        <span className="ml-1 text-xs font-normal text-neutral-400">
+                          （仅 macOS）
+                        </span>
+                      )}
+                    </span>
+                    <span className="block text-xs text-neutral-500">
+                      {opt.desc}
+                    </span>
                   </span>
-                </span>
-              </label>
-            ))}
+                </label>
+              );
+            })}
           </div>
 
           {provider === "cli" && (

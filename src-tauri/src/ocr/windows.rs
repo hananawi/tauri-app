@@ -98,8 +98,9 @@ pub fn focus_clip_window(
   window: &tauri::WebviewWindow,
 ) -> Result<(), String> {
   use windows::Win32::Foundation::HWND;
-  use windows::Win32::System::Threading::GetCurrentThreadId;
-  use windows::Win32::UI::Input::KeyboardAndMouse::AttachThreadInput;
+  use windows::Win32::System::Threading::{
+    AttachThreadInput, GetCurrentThreadId,
+  };
   use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId,
     IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
@@ -117,10 +118,9 @@ pub fn focus_clip_window(
     };
 
     // 挂接到前台线程的输入队列；前台窗口就是本进程自己时无需挂接。
-    // 第三个参数是 Win32 BOOL，用 .into() 由 bool 转换。
     let attached = fg_tid != 0
       && fg_tid != our_tid
-      && AttachThreadInput(our_tid, fg_tid, true.into()).as_bool();
+      && AttachThreadInput(our_tid, fg_tid, true).as_bool();
 
     if IsIconic(hwnd).as_bool() {
       let _ = ShowWindow(hwnd, SW_RESTORE);
@@ -131,7 +131,7 @@ pub fn focus_clip_window(
     let _ = SetForegroundWindow(hwnd);
 
     if attached {
-      let _ = AttachThreadInput(our_tid, fg_tid, false.into());
+      let _ = AttachThreadInput(our_tid, fg_tid, false);
     }
   }
 

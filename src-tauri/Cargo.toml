@@ -51,3 +51,11 @@ objc2-vision = "0.3.1"
 # Windows 专属：截图给 LLM 用（OCR 走云端大模型，不接 WinRT OCR）
 [target.'cfg(target_os = "windows")'.dependencies]
 xcap = "0.0.14"
+# 强制把冻屏蒙层窗口切到前台并拿到键盘焦点（全局快捷键触发时本进程在后台，
+# 系统会拦截 SetForegroundWindow，需借 AttachThreadInput 绕过）
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }

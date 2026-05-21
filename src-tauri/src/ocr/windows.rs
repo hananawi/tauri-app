@@ -85,6 +85,60 @@ pub fn warmup() {
   // no-op：Windows 不需要预热（不再有本地 OCR 引擎）。
 }
 
+/// 把冻屏蒙层窗口切到前台并交出键盘焦点。
+///
+/// 截图由全局快捷键触发，此时本进程在后台，Windows 会拦截后台进程的
+/// `SetForegroundWindow`：窗口能靠 always-on-top 浮在最上层，鼠标也能用，
+/// 但键盘焦点仍留在原前台窗口 —— 表现为蒙层里按 Enter / Esc 都没反应。
+///
+/// 解决办法：先用 `AttachThreadInput` 把本线程的输入队列挂到当前前台窗口
+/// 所属线程上，让系统把这次 `SetForegroundWindow` 当成「前台进程自己发起」
+/// 而放行；切到前台后再调 Tauri 的 `set_focus` 把焦点交给 WebView2 子窗口。
+pub fn focus_clip_window(
+  window: &tauri::WebviewWindow,
+) -> Result<(), String> {
+  use windows::Win32::Foundation::HWND;
+  use windows::Win32::System::Threading::GetCurrentThreadId;
+  use windows::Win32::UI::Input::KeyboardAndMouse::AttachThreadInput;
+  use windows::Win32::UI::WindowsAndMessaging::{
+    BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId,
+    IsIconic, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+  };
+
+  let hwnd = HWND(window.hwnd().map_err(|e| e.to_string())?.0);
+
+  unsafe {
+    let foreground = GetForegroundWindow();
+    let our_tid = GetCurrentThreadId();
+    let fg_tid = if foreground.0.is_null() {
+      0
+    } else {
+      GetWindowThreadProcessId(foreground, None)
+    };
+
+    // 挂接到前台线程的输入队列；前台窗口就是本进程自己时无需挂接。
+    // 第三个参数是 Win32 BOOL，用 .into() 由 bool 转换。
+    let attached = fg_tid != 0
+      && fg_tid != our_tid
+      && AttachThreadInput(our_tid, fg_tid, true.into()).as_bool();
+
+    if IsIconic(hwnd).as_bool() {
+      let _ = ShowWindow(hwnd, SW_RESTORE);
+    } else {
+      let _ = ShowWindow(hwnd, SW_SHOW);
+    }
+    let _ = BringWindowToTop(hwnd);
+    let _ = SetForegroundWindow(hwnd);
+
+    if attached {
+      let _ = AttachThreadInput(our_tid, fg_tid, false.into());
+    }
+  }
+
+  // 把键盘焦点交给 WebView2 子窗口，否则前端仍收不到 keydown。
+  window.set_focus().map_err(|e| e.to_string())
+}
+
 pub fn install_tray_click_fix() {
   // no-op：托盘点击闪烁是 macOS accessory app 的问题，Windows 不需要。
 }

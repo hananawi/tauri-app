@@ -107,6 +107,16 @@ where
   rx.recv().map_err(|e| e.to_string())
 }
 
+/// `window-will-show` 事件载荷：蒙层窗口在目标屏上的逻辑尺寸。
+/// 由后端算好下发，前端据此设定 Konva stage 尺寸。放后端是因为前端读
+/// `innerSize()` 会和窗口 resize 竞态——首次截图会拿到旧的默认窗口尺寸，
+/// 把冻屏整图塞进偏小的 stage 显示成「缩小版」。
+#[derive(Clone, Serialize)]
+struct ClipWindowSize {
+  width: f64,
+  height: f64,
+}
+
 /// 定位 `clip` 蒙层窗口铺满目标屏并显示。须在主线程调用。
 fn show_mask_window(
   app: &AppHandle,
@@ -116,7 +126,17 @@ fn show_mask_window(
     .get_webview_window("clip")
     .ok_or("clip window not found")?;
   position_window(&window, monitor)?;
-  app.emit("window-will-show", ()).map_err(|e| e.to_string())?;
+
+  // 逻辑尺寸 = 物理像素 / 缩放比。直接从目标屏算出下发，避免前端竞态。
+  let scale = monitor.scale_factor();
+  let size = ClipWindowSize {
+    width: (monitor.size().width as f64 / scale).round(),
+    height: (monitor.size().height as f64 / scale).round(),
+  };
+  app
+    .emit("window-will-show", size)
+    .map_err(|e| e.to_string())?;
+
   window.show().map_err(|e| e.to_string())?;
   // 平台相关地强制夺取键盘焦点：Windows 上全局快捷键触发时本进程在后台，
   // 普通 set_focus 会被系统拦截，导致蒙层里按 Enter / Esc 无反应。

@@ -55,15 +55,36 @@ pub fn open_llm_result_window(
   let (base_x, base_y) = primary_center(&app);
   let offset = (existing % 6) as f64 * 32.0;
 
-  WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("/llm-result".into()))
-    .title("识别结果")
-    .inner_size(LLM_RESULT_WIDTH, LLM_RESULT_HEIGHT)
-    .position(base_x + offset, base_y + offset)
-    .resizable(true)
-    .decorations(true)
-    .always_on_top(true)
-    .build()
-    .map_err(|e| e.to_string())?;
+  // 基础参数：跨平台通用
+  let mut builder =
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("/llm-result".into()))
+      .title("识别结果")
+      .inner_size(LLM_RESULT_WIDTH, LLM_RESULT_HEIGHT)
+      .position(base_x + offset, base_y + offset)
+      .resizable(true)
+      .always_on_top(true)
+      .shadow(true);
+
+  // macOS：标题栏改 Overlay（交通灯悬浮、标题文字隐藏，内容延伸到标题栏下方），
+  // 并让窗口背景透明，把外观交给下面的原生毛玻璃层。
+  #[cfg(target_os = "macos")]
+  {
+    builder = builder
+      .title_bar_style(tauri::TitleBarStyle::Overlay)
+      .hidden_title(true)
+      .transparent(true);
+  }
+  // Windows / 其它平台：去掉系统装饰，标题栏由前端自绘；
+  // 窗口透明，背景交给下面的亚克力材质层。
+  #[cfg(not(target_os = "macos"))]
+  {
+    builder = builder.decorations(false).transparent(true);
+  }
+
+  let window = builder.build().map_err(|e| e.to_string())?;
+
+  // 套上各平台的原生半透明材质（失败不致命，仅退化为前端的半透明背景）。
+  apply_window_vibrancy(&window);
 
   Ok(())
 }
@@ -84,4 +105,27 @@ fn primary_center(app: &AppHandle) -> (f64, f64) {
 #[tauri::command]
 pub fn open_settings_window(app: AppHandle) -> Result<(), String> {
   show_window(&app, "settings")
+}
+
+/// 给结果窗口套上原生半透明材质：macOS 用 NSVisualEffectView 毛玻璃，
+/// Windows 用 Acrylic 亚克力模糊。失败时静默退化为前端的半透明白背景。
+#[allow(unused_variables)]
+fn apply_window_vibrancy(window: &tauri::WebviewWindow) {
+  #[cfg(target_os = "macos")]
+  {
+    use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState};
+    // HudWindow：磨砂感最强、最通透的材质。第四个参数为圆角半径，
+    // 与前端 `rounded-xl` 的 12px 对齐。
+    let _ = window_vibrancy::apply_vibrancy(
+      window,
+      NSVisualEffectMaterial::HudWindow,
+      Some(NSVisualEffectState::Active),
+      Some(12.0),
+    );
+  }
+  #[cfg(target_os = "windows")]
+  {
+    // None：使用跟随系统主题的默认着色。
+    let _ = window_vibrancy::apply_acrylic(window, None);
+  }
 }

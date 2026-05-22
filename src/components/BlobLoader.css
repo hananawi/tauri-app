@@ -1,0 +1,312 @@
+/* 有机 blob 加载动画 —— 由 BlobLoader 组件随机抽取一款展示 */
+
+.bl-wrap {
+  --bl-ink: #262626;
+  --bl-ash: #a8a8a8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  min-height: 240px;
+  padding: 44px 0;
+}
+
+.bl-label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #404040;
+}
+
+.bl-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* 共用关键帧 */
+@keyframes bl-sp {
+  to { transform: rotate(360deg); }
+}
+@keyframes bl-m1 {
+  0%, 100% { border-radius: 63% 37% 42% 58% / 56% 44% 56% 44%; }
+  25%      { border-radius: 37% 63% 60% 40% / 44% 48% 52% 56%; }
+  50%      { border-radius: 48% 52% 33% 67% / 58% 62% 38% 42%; }
+  75%      { border-radius: 58% 42% 56% 44% / 45% 38% 62% 55%; }
+}
+@keyframes bl-m2 {
+  0%, 100% { border-radius: 66% 34% 38% 62% / 62% 40% 60% 38%; }
+  33%      { border-radius: 34% 66% 62% 38% / 40% 56% 44% 60%; }
+  66%      { border-radius: 52% 48% 56% 44% / 56% 36% 64% 44%; }
+}
+
+/* 04 — 呼吸 blob */
+.bl-4 {
+  width: 100px; height: 100px; background: var(--bl-ink);
+  animation: bl-m2 4.6s ease-in-out infinite, bl-breathe 2.6s ease-in-out infinite;
+}
+@keyframes bl-breathe {
+  0%, 100% { transform: scale(0.66); }
+  50%      { transform: scale(1); }
+}
+
+/* 05 — gooey 轨道 */
+.bl-5 {
+  width: 150px; height: 150px; position: relative; filter: url(#bl-goo);
+}
+.bl-5 i {
+  position: absolute; top: 50%; left: 50%;
+  background: var(--bl-ink); border-radius: 50%;
+}
+.bl-5 i:nth-child(1) {
+  width: 48px; height: 48px; margin: -24px;
+  animation: bl-pulse5 2.6s ease-in-out infinite;
+}
+.bl-5 i:nth-child(2) {
+  width: 30px; height: 30px; margin: -15px;
+  animation: bl-orb5 2.6s ease-in-out infinite;
+}
+@keyframes bl-pulse5 {
+  0%, 100% { transform: scale(0.9); }
+  50%      { transform: scale(1.08); }
+}
+@keyframes bl-orb5 {
+  0%   { transform: rotate(0deg)   translateX(16px); }
+  50%  { transform: rotate(180deg) translateX(50px); }
+  100% { transform: rotate(360deg) translateX(16px); }
+}
+
+/* 06 — 细胞分裂 */
+.bl-6 {
+  width: 160px; height: 120px; position: relative; filter: url(#bl-goo);
+}
+.bl-6 i {
+  position: absolute; top: 50%; left: 50%;
+  width: 52px; height: 52px; margin: -26px;
+  background: var(--bl-ink); border-radius: 50%;
+}
+.bl-6 i:nth-child(1) { animation: bl-div6a 2.4s ease-in-out infinite; }
+.bl-6 i:nth-child(2) { animation: bl-div6b 2.4s ease-in-out infinite; }
+@keyframes bl-div6a {
+  0%, 100% { transform: translateX(0) scale(1); }
+  50%      { transform: translateX(-32px) scale(0.84); }
+}
+@keyframes bl-div6b {
+  0%, 100% { transform: translateX(0) scale(1); }
+  50%      { transform: translateX(32px) scale(0.84); }
+}
+
+/* 07 — 三球聚散 */
+.bl-7 {
+  width: 150px; height: 150px; position: relative; filter: url(#bl-goo);
+  animation: bl-sp 6s linear infinite;
+}
+.bl-7 i {
+  position: absolute; top: 50%; left: 50%;
+  width: 44px; height: 44px; margin: -22px;
+  background: var(--bl-ink); border-radius: 50%;
+  animation: bl-tri7 2.8s ease-in-out infinite;
+}
+.bl-7 i:nth-child(1) { --a: 0deg; }
+.bl-7 i:nth-child(2) { --a: 120deg; animation-delay: -0.93s; }
+.bl-7 i:nth-child(3) { --a: 240deg; animation-delay: -1.86s; }
+@keyframes bl-tri7 {
+  0%, 100% { transform: rotate(var(--a)) translateX(8px); }
+  50%      { transform: rotate(var(--a)) translateX(42px); }
+}
+
+/* 08 — metaball 星团 */
+.bl-8 {
+  width: 162px; height: 162px; position: relative; filter: url(#bl-goo-strong);
+  animation: bl-sp 9s linear infinite;
+}
+.bl-8 i {
+  position: absolute; top: 50%; left: 50%;
+  width: 38px; height: 38px; margin: -19px;
+  background: var(--bl-ink); border-radius: 50%;
+  animation: bl-clu8 3s ease-in-out infinite;
+}
+.bl-8 i:nth-child(1) { --a: 0deg; }
+.bl-8 i:nth-child(2) { --a: 72deg;  animation-delay: -0.6s; }
+.bl-8 i:nth-child(3) { --a: 144deg; animation-delay: -1.2s; }
+.bl-8 i:nth-child(4) { --a: 216deg; animation-delay: -1.8s; }
+.bl-8 i:nth-child(5) { --a: 288deg; animation-delay: -2.4s; }
+@keyframes bl-clu8 {
+  0%, 100% { transform: rotate(var(--a)) translateX(8px); }
+  50%      { transform: rotate(calc(var(--a) + 36deg)) translateX(46px); }
+}
+
+/* 10 — 彗星 */
+.bl-10 {
+  width: 150px; height: 150px; position: relative; filter: url(#bl-goo);
+}
+.bl-10 i {
+  position: absolute; top: 50%; left: 50%;
+  background: var(--bl-ink); border-radius: 50%;
+  animation: bl-orb10 1.9s linear infinite;
+}
+.bl-10 i:nth-child(1) { width: 42px; height: 42px; margin: -21px; }
+.bl-10 i:nth-child(2) { width: 34px; height: 34px; margin: -17px;  animation-delay: -0.1s; }
+.bl-10 i:nth-child(3) { width: 26px; height: 26px; margin: -13px;  animation-delay: -0.2s; }
+.bl-10 i:nth-child(4) { width: 18px; height: 18px; margin: -9px;   animation-delay: -0.3s; }
+.bl-10 i:nth-child(5) { width: 11px; height: 11px; margin: -5.5px; animation-delay: -0.4s; }
+@keyframes bl-orb10 {
+  from { transform: rotate(0deg)   translateX(48px); }
+  to   { transform: rotate(360deg) translateX(48px); }
+}
+
+/* 11 — 果冻 */
+.bl-11 {
+  width: 96px; height: 96px; background: var(--bl-ink);
+  animation: bl-jel11 1s ease-in-out infinite;
+}
+@keyframes bl-jel11 {
+  0%, 100% { border-radius: 50%; transform: scale(1, 1); }
+  25% { border-radius: 58% 42% 50% 50% / 56% 50% 50% 44%; transform: scale(1.07, 0.93); }
+  50% { border-radius: 50%; transform: scale(0.94, 1.06); }
+  75% { border-radius: 46% 54% 53% 47% / 48% 46% 54% 52%; transform: scale(1.05, 0.95); }
+}
+
+/* 12 — 弹跳压扁 */
+.bl-12 {
+  width: 78px; height: 78px; background: var(--bl-ink); border-radius: 50%;
+  animation: bl-bnc12 1.15s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
+}
+@keyframes bl-bnc12 {
+  0%, 100% { transform: translateY(-36px) scale(1, 1); border-radius: 50%; }
+  45% { transform: translateY(28px) scale(1, 1); border-radius: 50%; }
+  50% {
+    transform: translateY(36px) scale(1.34, 0.64);
+    border-radius: 54% 46% 44% 56% / 28% 30% 70% 72%;
+  }
+  55% { transform: translateY(28px) scale(1, 1); border-radius: 50%; }
+}
+
+/* 13 — 同心 */
+.bl-13 {
+  width: 112px; height: 112px; position: relative;
+}
+.bl-13 i { position: absolute; top: 50%; left: 50%; }
+.bl-13 i:nth-child(1) {
+  width: 112px; height: 112px; margin: -56px;
+  border: 6px solid var(--bl-ink);
+  animation: bl-m1 5s ease-in-out infinite, bl-sp 11s linear infinite;
+}
+.bl-13 i:nth-child(2) {
+  width: 50px; height: 50px; margin: -25px; background: var(--bl-ink);
+  animation: bl-m2 3.4s ease-in-out infinite, bl-sp 6s linear infinite reverse;
+}
+
+/* 14 — 脉冲波 */
+.bl-14 {
+  width: 160px; height: 160px; position: relative;
+}
+.bl-14 i {
+  position: absolute; top: 50%; left: 50%;
+  width: 48px; height: 48px; margin: -24px;
+  border-radius: 48% 52% 55% 45% / 52% 46% 54% 48%;
+}
+.bl-14 i:nth-child(1) {
+  background: var(--bl-ink); animation: bl-m2 3.6s ease-in-out infinite;
+}
+.bl-14 i:nth-child(2),
+.bl-14 i:nth-child(3) {
+  border: 3px solid var(--bl-ink);
+  animation: bl-ring14 2.8s ease-out infinite;
+}
+.bl-14 i:nth-child(3) { animation-delay: -1.4s; }
+@keyframes bl-ring14 {
+  0%   { transform: scale(0.55) rotate(0deg); opacity: 0.65; }
+  100% { transform: scale(3) rotate(140deg); opacity: 0; }
+}
+
+/* 16 — 双色 blob */
+.bl-16 {
+  width: 98px; height: 98px;
+  background: linear-gradient(96deg, var(--bl-ink) 0 50%, var(--bl-ash) 50% 100%);
+  animation: bl-m1 4s ease-in-out infinite, bl-sp 2.6s ease-in-out infinite;
+}
+
+/* 17 — gooey 双球旋转 */
+.bl-17 {
+  width: 150px; height: 150px; position: relative; filter: url(#bl-goo);
+  animation: bl-sp 2.6s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+}
+.bl-17 i {
+  position: absolute; top: 50%; left: 50%;
+  background: var(--bl-ink); border-radius: 50%;
+}
+.bl-17 i:nth-child(1) {
+  width: 48px; height: 48px; margin: -24px;
+  animation: bl-yyA 2.6s ease-in-out infinite;
+}
+.bl-17 i:nth-child(2) {
+  width: 34px; height: 34px; margin: -17px;
+  animation: bl-yyB 2.6s ease-in-out infinite;
+}
+@keyframes bl-yyA {
+  0%, 100% { transform: translateX(-10px) scale(1); }
+  50%      { transform: translateX(-42px) scale(0.82); }
+}
+@keyframes bl-yyB {
+  0%, 100% { transform: translateX(10px) scale(1); }
+  50%      { transform: translateX(42px) scale(0.82); }
+}
+
+/* 18 — 墨滴扩散 */
+.bl-18 {
+  width: 110px; height: 110px; background: var(--bl-ink);
+  animation: bl-ink18 2.1s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+@keyframes bl-ink18 {
+  0%   { transform: scale(0); border-radius: 50%; opacity: 1; }
+  65%  { transform: scale(0.95); border-radius: 54% 46% 48% 52% / 50% 52% 48% 50%; opacity: 1; }
+  100% { transform: scale(1.08); border-radius: 48% 52% 54% 46% / 52% 48% 50% 50%; opacity: 0; }
+}
+
+/* 19 — 方 ⇄ blob */
+.bl-19 {
+  width: 94px; height: 94px; background: var(--bl-ink);
+  animation: bl-sq19 3.4s ease-in-out infinite, bl-sp 6.8s linear infinite;
+}
+@keyframes bl-sq19 {
+  0%, 100% { border-radius: 14%; }
+  50%      { border-radius: 62% 38% 45% 55% / 58% 50% 50% 42%; }
+}
+
+/* 20 — blob 环 */
+.bl-20 {
+  width: 150px; height: 150px; position: relative; filter: url(#bl-goo);
+  animation: bl-sp 9s linear infinite;
+}
+.bl-20 span { position: absolute; top: 50%; left: 50%; }
+.bl-20 span i {
+  position: absolute; width: 24px; height: 24px; margin: -12px;
+  background: var(--bl-ink);
+  border-radius: 46% 54% 52% 48% / 50% 48% 52% 50%;
+  animation: bl-wv20 1.5s ease-in-out infinite;
+}
+.bl-20 span:nth-child(1)  { transform: rotate(0deg)   translateY(-58px); }
+.bl-20 span:nth-child(2)  { transform: rotate(36deg)  translateY(-58px); }
+.bl-20 span:nth-child(3)  { transform: rotate(72deg)  translateY(-58px); }
+.bl-20 span:nth-child(4)  { transform: rotate(108deg) translateY(-58px); }
+.bl-20 span:nth-child(5)  { transform: rotate(144deg) translateY(-58px); }
+.bl-20 span:nth-child(6)  { transform: rotate(180deg) translateY(-58px); }
+.bl-20 span:nth-child(7)  { transform: rotate(216deg) translateY(-58px); }
+.bl-20 span:nth-child(8)  { transform: rotate(252deg) translateY(-58px); }
+.bl-20 span:nth-child(9)  { transform: rotate(288deg) translateY(-58px); }
+.bl-20 span:nth-child(10) { transform: rotate(324deg) translateY(-58px); }
+.bl-20 span:nth-child(2)  i { animation-delay: -0.15s; }
+.bl-20 span:nth-child(3)  i { animation-delay: -0.30s; }
+.bl-20 span:nth-child(4)  i { animation-delay: -0.45s; }
+.bl-20 span:nth-child(5)  i { animation-delay: -0.60s; }
+.bl-20 span:nth-child(6)  i { animation-delay: -0.75s; }
+.bl-20 span:nth-child(7)  i { animation-delay: -0.90s; }
+.bl-20 span:nth-child(8)  i { animation-delay: -1.05s; }
+.bl-20 span:nth-child(9)  i { animation-delay: -1.20s; }
+.bl-20 span:nth-child(10) i { animation-delay: -1.35s; }
+@keyframes bl-wv20 {
+  0%, 100% { transform: scale(0.34); }
+  50%      { transform: scale(1); }
+}

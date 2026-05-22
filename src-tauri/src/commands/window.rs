@@ -51,8 +51,8 @@ pub fn open_llm_result_window(
     .map_err(|e| e.to_string())?
     .set_pending_llm_image(label.clone(), image_path);
 
-  // 以主屏中心为基准，按已有窗口数做层叠偏移。
-  let (base_x, base_y) = primary_center(&app);
+  // 以鼠标所在屏（用户当前操作的屏）中心为基准，按已有窗口数做层叠偏移。
+  let (base_x, base_y) = active_monitor_center(&app);
   let offset = (existing % 6) as f64 * 32.0;
 
   // 基础参数：跨平台通用
@@ -89,9 +89,10 @@ pub fn open_llm_result_window(
   Ok(())
 }
 
-/// 主屏逻辑坐标系下，使结果窗口居中的左上角坐标。取不到主屏时退回固定值。
-fn primary_center(app: &AppHandle) -> (f64, f64) {
-  if let Ok(Some(monitor)) = app.primary_monitor() {
+/// 鼠标所在屏（用户当前操作的屏）逻辑坐标系下，使结果窗口居中的左上角坐标。
+/// 取不到任何显示器时退回固定值。
+fn active_monitor_center(app: &AppHandle) -> (f64, f64) {
+  if let Some(monitor) = active_monitor(app) {
     let sf = monitor.scale_factor();
     let size = monitor.size().to_logical::<f64>(sf);
     let pos = monitor.position().to_logical::<f64>(sf);
@@ -100,6 +101,27 @@ fn primary_center(app: &AppHandle) -> (f64, f64) {
     return (x.max(0.0), y.max(0.0));
   }
   (200.0, 200.0)
+}
+
+/// 找鼠标所在屏（即用户当前操作的屏）；找不到就退回主屏。
+/// 与 `ocr.rs` 里截图选屏的口径一致：坐标用物理像素比较。
+fn active_monitor(app: &AppHandle) -> Option<tauri::Monitor> {
+  if let (Ok(cursor), Ok(monitors)) =
+    (app.cursor_position(), app.available_monitors())
+  {
+    let hit = monitors.iter().find(|m| {
+      let pos = m.position();
+      let size = m.size();
+      cursor.x >= pos.x as f64
+        && cursor.x < pos.x as f64 + size.width as f64
+        && cursor.y >= pos.y as f64
+        && cursor.y < pos.y as f64 + size.height as f64
+    });
+    if let Some(m) = hit {
+      return Some(m.clone());
+    }
+  }
+  app.primary_monitor().ok().flatten()
 }
 
 #[tauri::command]

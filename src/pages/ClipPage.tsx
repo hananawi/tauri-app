@@ -36,9 +36,14 @@ export const ClipPage = () => {
     const mode = await getRecognitionMode();
 
     if (mode === "llm") {
-      const imagePath = await saveCaptureToTemp(rect);
-      await openLlmResultWindow(imagePath);
-      stopClipping();
+      // try/finally：任何一步抛错都必须把蒙层关掉。否则保存截图或开窗失败
+      // 会让冻屏蒙层卡在屏幕最上层，Esc 焦点又不一定能拿到，用户只能重启电脑。
+      try {
+        const imagePath = await saveCaptureToTemp(rect);
+        await openLlmResultWindow(imagePath);
+      } finally {
+        stopClipping();
+      }
       return;
     }
 

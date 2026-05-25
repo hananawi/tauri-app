@@ -74,16 +74,20 @@ pub fn open_llm_result_window(
       .hidden_title(true)
       .transparent(true);
   }
-  // Windows / 其它平台：去掉系统装饰，标题栏由前端自绘；
-  // 窗口透明，背景交给下面的亚克力材质层。
+  // Windows / 其它平台：去掉系统装饰，标题栏由前端自绘。
+  //
+  // 不开 transparent + 不套 Acrylic：在部分 Win10/Win11 上 Acrylic + WebView2
+  // transparent 会导致整个窗口完全透明、内容看不见（用户感知为「空白窗口」），
+  // 且失败时静默退化没有兜底背景。为稳妥起见，Windows 上保持普通不透明窗口，
+  // 美感交给前端 CSS。
   #[cfg(not(target_os = "macos"))]
   {
-    builder = builder.decorations(false).transparent(true);
+    builder = builder.decorations(false);
   }
 
   let window = builder.build().map_err(|e| e.to_string())?;
 
-  // 套上各平台的原生半透明材质（失败不致命，仅退化为前端的半透明背景）。
+  // 套上各平台的原生半透明材质（仅 macOS，Windows 见上文注释）。
   apply_window_vibrancy(&window);
 
   Ok(())
@@ -129,8 +133,8 @@ pub fn open_settings_window(app: AppHandle) -> Result<(), String> {
   show_window(&app, "settings")
 }
 
-/// 给结果窗口套上原生半透明材质：macOS 用 NSVisualEffectView 毛玻璃，
-/// Windows 用 Acrylic 亚克力模糊。失败时静默退化为前端的半透明白背景。
+/// 给结果窗口套上原生半透明材质：macOS 用 NSVisualEffectView 毛玻璃。
+/// Windows 上不套 Acrylic，原因见 `open_llm_result_window` 内的注释。
 #[allow(unused_variables)]
 fn apply_window_vibrancy(window: &tauri::WebviewWindow) {
   #[cfg(target_os = "macos")]
@@ -144,10 +148,5 @@ fn apply_window_vibrancy(window: &tauri::WebviewWindow) {
       Some(NSVisualEffectState::Active),
       Some(12.0),
     );
-  }
-  #[cfg(target_os = "windows")]
-  {
-    // None：使用跟随系统主题的默认着色。
-    let _ = window_vibrancy::apply_acrylic(window, None);
   }
 }

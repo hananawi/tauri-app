@@ -176,13 +176,13 @@ export const LlmResultPage = () => {
   return (
     <div
       className={`flex flex-col h-screen overflow-hidden text-neutral-800 ${
-        IS_MAC ? "rounded-xl" : ""
+        IS_MAC ? "rounded-xl" : "bg-neutral-50"
       }`}
     >
       <header
         data-tauri-drag-region
         className={`flex items-center gap-2 h-10 select-none border-b border-black/[0.06] ${
-          IS_MAC ? "pl-20 pr-3" : "pl-4 pr-0"
+          IS_MAC ? "pl-20 pr-3" : "pl-4 pr-0 bg-neutral-100"
         }`}
       >
         <div className="pointer-events-none flex items-center gap-2">
@@ -207,7 +207,11 @@ export const LlmResultPage = () => {
         {!IS_MAC && <WindowControls />}
       </header>
 
-      <main className="flex-1 overflow-auto px-4 py-3 bg-white/30 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent">
+      <main
+        className={`flex-1 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
+          IS_MAC ? "bg-white/30" : "bg-white"
+        }`}
+      >
         {status === "error" ? (
           <div className="text-sm text-red-600 whitespace-pre-wrap">
             {error}

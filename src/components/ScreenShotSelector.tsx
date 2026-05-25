@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
 import { useEventListener } from "usehooks-ts";
-import { copyText } from "../lib/commands";
+import { copyText, stopClipping } from "../lib/commands";
 import { DetectionResultItem, PixelRect } from "../types/clip";
 
 type Selection = { x: number; y: number; width: number; height: number };
@@ -99,9 +99,22 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
   const finishSelectionRef = useRef(finishSelection);
   finishSelectionRef.current = finishSelection;
 
+  // 没有有效选区时再次按快捷键 → 退出蒙层。这是 Esc 焦点丢失时的救命保险：
+  // 若不给这个出口，用户在 Windows 上一旦遇到蒙层卡死就只能重启电脑。
+  const rectRef = useRef(rect);
+  rectRef.current = rect;
+  const onShortcutAgainRef = useRef(() => {
+    const r = rectRef.current;
+    if (r && r.width > 0 && r.height > 0) {
+      finishSelectionRef.current();
+    } else {
+      void stopClipping();
+    }
+  });
+
   useEffect(() => {
     const removeListenerPromise = listen("clip-shortcut-again", () => {
-      finishSelectionRef.current();
+      onShortcutAgainRef.current();
     });
 
     return () => {

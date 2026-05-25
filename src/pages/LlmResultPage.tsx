@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { askLlmAboutImage, takePendingCapture } from "../lib/commands";
+import { BlobLoader } from "../components/BlobLoader";
 import {
   getAnthropicAuthToken,
   getAnthropicBaseUrl,
@@ -30,53 +31,48 @@ const STATUS_LABEL: Record<Status, string> = {
   error: "出错了",
 };
 
-const SHIMMER_BAR =
-  "rounded bg-gradient-to-r from-neutral-200 via-neutral-50 to-neutral-200 bg-[length:200%_100%] animate-shimmer";
+// macOS 走毛玻璃 + 交通灯悬浮：需要圆角，且 header 左侧要给交通灯让位
+const IS_MAC =
+  typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 
-// 逐行递增的扫光延迟，让高光像一道波浪自上而下扫过骨架
-const SHIMMER_DELAYS = [
-  "[animation-delay:0ms]",
-  "[animation-delay:-180ms]",
-  "[animation-delay:-360ms]",
-  "[animation-delay:-540ms]",
-  "[animation-delay:-720ms]",
-  "[animation-delay:-900ms]",
-  "[animation-delay:-1080ms]",
-];
-
-// 每行 = 尺寸类 + 是否在其后留出段落空隙
-const SKELETON_ROWS: { cls: string; gap?: boolean }[] = [
-  { cls: "h-4 w-1/3" },
-  { cls: "h-3 w-11/12" },
-  { cls: "h-3 w-full" },
-  { cls: "h-3 w-4/5", gap: true },
-  { cls: "h-3 w-3/4" },
-  { cls: "h-3 w-full" },
-  { cls: "h-3 w-2/3" },
-];
-
-const LoadingSkeleton = ({ label }: { label: string }) => (
-  <div className="flex flex-col gap-6 animate-fade-in">
-    <div className="flex items-center gap-2 text-sm text-neutral-400">
-      <span>{label}</span>
-      <span className="flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.32s]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce [animation-delay:-0.16s]" />
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" />
-      </span>
+// Windows 无边框窗口：自绘最小化 / 最大化 / 关闭按钮（macOS 用系统交通灯）
+const WindowControls = () => {
+  const win = getCurrentWindow();
+  const btn =
+    "flex h-full w-11 items-center justify-center text-neutral-500 transition-colors";
+  return (
+    <div className="ml-auto flex h-full items-center">
+      <button
+        aria-label="最小化"
+        onClick={() => void win.minimize()}
+        className={`${btn} hover:bg-black/10`}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" />
+        </svg>
+      </button>
+      <button
+        aria-label="最大化"
+        onClick={() => void win.toggleMaximize()}
+        className={`${btn} hover:bg-black/10`}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <rect x="0.75" y="0.75" width="8.5" height="8.5" stroke="currentColor" />
+        </svg>
+      </button>
+      <button
+        aria-label="关闭"
+        onClick={() => void win.close()}
+        className={`${btn} hover:bg-red-500 hover:text-white`}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" />
+          <line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" />
+        </svg>
+      </button>
     </div>
-    <div className="flex flex-col gap-3">
-      {SKELETON_ROWS.map((row, i) => (
-        <div
-          key={i}
-          className={`${SHIMMER_BAR} ${row.cls} ${
-            SHIMMER_DELAYS[i % SHIMMER_DELAYS.length]
-          } ${row.gap ? "mb-3" : ""}`}
-        />
-      ))}
-    </div>
-  </div>
-);
+  );
+};
 
 export const LlmResultPage = () => {
   const [text, setText] = useState("");
@@ -178,28 +174,44 @@ export const LlmResultPage = () => {
   }, [text]);
 
   return (
-    <div className="flex flex-col h-screen bg-white text-neutral-800">
-      <header className="flex items-center gap-2 px-4 py-2 border-b border-neutral-200 bg-neutral-50">
-        <span className="relative flex w-2 h-2">
-          {(status === "loading" || status === "streaming") && (
-            <span className="absolute inline-flex w-full h-full rounded-full bg-blue-400 opacity-75 animate-ping" />
-          )}
-          <span
-            className={`relative inline-flex w-2 h-2 rounded-full ${
-              status === "error"
-                ? "bg-red-500"
-                : status === "done"
-                ? "bg-green-500"
-                : status === "idle"
-                ? "bg-neutral-300"
-                : "bg-blue-500"
-            }`}
-          />
-        </span>
-        <span className="text-sm font-medium">{STATUS_LABEL[status]}</span>
+    <div
+      className={`flex flex-col h-screen overflow-hidden text-neutral-800 ${
+        IS_MAC ? "rounded-xl" : "bg-neutral-50"
+      }`}
+    >
+      <header
+        data-tauri-drag-region
+        className={`flex items-center gap-2 h-10 select-none border-b border-black/[0.06] ${
+          IS_MAC ? "pl-20 pr-3" : "pl-4 pr-0 bg-neutral-100"
+        }`}
+      >
+        <div className="pointer-events-none flex items-center gap-2">
+          <span className="relative flex w-2 h-2">
+            {(status === "loading" || status === "streaming") && (
+              <span className="absolute inline-flex w-full h-full rounded-full bg-blue-400 opacity-75 animate-ping" />
+            )}
+            <span
+              className={`relative inline-flex w-2 h-2 rounded-full ${
+                status === "error"
+                  ? "bg-red-500"
+                  : status === "done"
+                  ? "bg-green-500"
+                  : status === "idle"
+                  ? "bg-neutral-300"
+                  : "bg-blue-500"
+              }`}
+            />
+          </span>
+          <span className="text-sm font-medium">{STATUS_LABEL[status]}</span>
+        </div>
+        {!IS_MAC && <WindowControls />}
       </header>
 
-      <main className="flex-1 overflow-auto px-4 py-3">
+      <main
+        className={`flex-1 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
+          IS_MAC ? "bg-white/30" : "bg-white"
+        }`}
+      >
         {status === "error" ? (
           <div className="text-sm text-red-600 whitespace-pre-wrap">
             {error}
@@ -211,7 +223,7 @@ export const LlmResultPage = () => {
         ) : status === "idle" ? (
           <div className="text-sm text-neutral-400">请先截图。</div>
         ) : (
-          <LoadingSkeleton
+          <BlobLoader
             label={status === "streaming" ? "正在生成内容" : "正在请求模型"}
           />
         )}

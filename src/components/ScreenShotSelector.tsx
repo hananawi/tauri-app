@@ -1,13 +1,12 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import Konva from "konva";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Group, Image as KonvaImage, Layer, Rect, Stage } from "react-konva";
 import { Html } from "react-konva-utils";
 import { useEventListener } from "usehooks-ts";
-import { copyText } from "../lib/commands";
+import { copyText, stopClipping } from "../lib/commands";
 import { DetectionResultItem, PixelRect } from "../types/clip";
 
 type Selection = { x: number; y: number; width: number; height: number };
@@ -100,9 +99,22 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
   const finishSelectionRef = useRef(finishSelection);
   finishSelectionRef.current = finishSelection;
 
+  // 没有有效选区时再次按快捷键 → 退出蒙层。这是 Esc 焦点丢失时的救命保险：
+  // 若不给这个出口，用户在 Windows 上一旦遇到蒙层卡死就只能重启电脑。
+  const rectRef = useRef(rect);
+  rectRef.current = rect;
+  const onShortcutAgainRef = useRef(() => {
+    const r = rectRef.current;
+    if (r && r.width > 0 && r.height > 0) {
+      finishSelectionRef.current();
+    } else {
+      void stopClipping();
+    }
+  });
+
   useEffect(() => {
     const removeListenerPromise = listen("clip-shortcut-again", () => {
-      finishSelectionRef.current();
+      onShortcutAgainRef.current();
     });
 
     return () => {
@@ -110,26 +122,22 @@ export const ScreenShotSelector: React.FC<PropsType> = ({
     };
   }, []);
 
-  // 截图开始：取窗口逻辑尺寸，并通过 clipimg:// 协议加载冻屏整图。
+  // 截图开始：用后端下发的逻辑尺寸，并通过 clipimg:// 协议加载冻屏整图。
   useEffect(() => {
-    const removeListenerPromise = listen("window-will-show", async () => {
-      // 窗口已被后端 resize 到目标屏，取权威物理尺寸 + 缩放比算出逻辑尺寸。
-      const win = getCurrentWindow();
-      const [size, scale] = await Promise.all([
-        win.innerSize(),
-        win.scaleFactor(),
-      ]);
-      setStageSize({
-        width: Math.round(size.width / scale),
-        height: Math.round(size.height / scale),
-      });
+    const removeListenerPromise = listen<StageSize>(
+      "window-will-show",
+      (event) => {
+        // stage 尺寸由后端按目标屏算好下发；前端自己读 innerSize() 会和
+        // 窗口 resize 竞态，首次截图拿到旧的默认窗口尺寸把冻屏缩小。
+        setStageSize(event.payload);
 
-      // clipimg:// 从后端内存读冻屏整图；带时间戳绕过 webview 缓存。
-      const img = new window.Image();
-      img.onload = () => setFrozenImg(img);
-      img.onerror = () => console.error("加载冻屏图失败");
-      img.src = `${convertFileSrc("frozen", "clipimg")}?t=${Date.now()}`;
-    });
+        // clipimg:// 从后端内存读冻屏整图；带时间戳绕过 webview 缓存。
+        const img = new window.Image();
+        img.onload = () => setFrozenImg(img);
+        img.onerror = () => console.error("加载冻屏图失败");
+        img.src = `${convertFileSrc("frozen", "clipimg")}?t=${Date.now()}`;
+      }
+    );
 
     return () => {
       removeListenerPromise.then((removeListener) => removeListener());

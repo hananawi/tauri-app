@@ -38,10 +38,16 @@ export async function takePendingCapture(
   return invoke<string | null>("take_pending_capture", { windowLabel });
 }
 
+/** 一轮对话消息。整个对话历史（含本次追问）一起传给后端以保留首图上下文。 */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export async function askLlmAboutImage(args: {
   windowLabel: string;
   imagePath: string;
-  prompt: string;
+  messages: ChatMessage[];
   provider: string;
   baseUrl: string;
   authToken: string;

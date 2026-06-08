@@ -3,7 +3,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { askLlmAboutImage, takePendingCapture } from "../lib/commands";
+import {
+  askLlmAboutImage,
+  takePendingCapture,
+  type ChatMessage,
+} from "../lib/commands";
 import { BlobLoader } from "../components/BlobLoader";
 import {
   getAnthropicAuthToken,
@@ -24,6 +28,24 @@ import {
 import type { LlmProvider } from "../lib/settings";
 
 type Status = "idle" | "loading" | "streaming" | "done" | "error";
+
+// 调用后端 ask_llm_about_image 所需的 provider 配置（不含会话相关字段）。
+// 结果窗口生命周期内设置不变，故首轮读一次后缓存，追问复用。
+type ProviderSettings = {
+  provider: string;
+  baseUrl: string;
+  authToken: string;
+  cliPath: string;
+  sessionDir: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  openaiModel: string;
+  cloudflareBaseUrl: string;
+  cloudflareAigAuthorization: string;
+  cloudflareAigByokAlias: string;
+  cloudflareModel: string;
+  proxyUrl: string;
+};
 
 // Anthropic API provider 的模型在后端固定，没有前端配置项。
 // 与 src-tauri/src/commands/llm.rs 的 LLM_MODEL 常量保持一致。
@@ -98,120 +120,190 @@ const WindowControls = () => {
   );
 };
 
+// 用户气泡：右对齐，蓝底白字，保留换行。
+const UserBubble = ({ text }: { text: string }) => (
+  <div className="self-end max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-blue-500 px-3 py-2 text-sm text-white shadow-sm">
+    {text}
+  </div>
+);
+
+// 助手气泡：左对齐 Markdown 渲染。
+const AssistantBubble = ({ text }: { text: string }) => (
+  <div className="prose prose-sm prose-neutral max-w-none self-start prose-pre:bg-neutral-100 prose-pre:text-neutral-800">
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+  </div>
+);
+
 export const LlmResultPage = () => {
-  const [text, setText] = useState("");
+  // 已完成的对话轮次（首条为预设 prompt，不在界面展示，仅作上下文）。
+  const [turns, setTurns] = useState<ChatMessage[]>([]);
+  // 当前正在流式生成的助手文本（尚未并入 turns）。
+  const [streaming, setStreaming] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [model, setModel] = useState("");
+  const [input, setInput] = useState("");
+
+  // 事件回调里读取的最新值用 ref，避免闭包拿到旧 state。
+  const turnsRef = useRef<ChatMessage[]>([]);
+  const streamingRef = useRef("");
   const askingRef = useRef(false);
+  const imagePathRef = useRef("");
+  const settingsRef = useRef<ProviderSettings | null>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // 标题栏展示当前模型名：挂载即读一次设置（结果窗口生命周期内设置不变）。
-    void (async () => {
-      const [provider, openaiModel, cloudflareModel] = await Promise.all([
-        getLlmProvider(),
-        getOpenaiModel(),
-        getCloudflareModel(),
-      ]);
-      setModel(resolveModelName(provider, openaiModel, cloudflareModel));
-    })();
-  }, []);
+  // 发起一轮问答：把本轮 user 文本追加进历史，连同首图一起发给后端，
+  // 流式输出经事件回调累积，done 事件时并入 turns。
+  const ask = async (userText: string) => {
+    const settings = settingsRef.current;
+    if (askingRef.current || !settings || !imagePathRef.current) return;
+    askingRef.current = true;
+
+    const next: ChatMessage[] = [
+      ...turnsRef.current,
+      { role: "user", text: userText },
+    ];
+    turnsRef.current = next;
+    setTurns(next);
+    streamingRef.current = "";
+    setStreaming("");
+    setError("");
+    setStatus("loading");
+
+    try {
+      await askLlmAboutImage({
+        windowLabel: getCurrentWindow().label,
+        imagePath: imagePathRef.current,
+        messages: next,
+        ...settings,
+      });
+      // 正常结束以 done 事件为准（见 useEffect 内监听）；invoke 仅在后端
+      // 返回 Err 时 reject，由下方 catch 处理。
+    } catch (e) {
+      setError(String(e));
+      setStatus("error");
+      askingRef.current = false;
+    }
+  };
+
+  const submit = () => {
+    const q = input.trim();
+    if (!q || askingRef.current) return;
+    setInput("");
+    if (taRef.current) taRef.current.style.height = "auto";
+    void ask(q);
+  };
 
   useEffect(() => {
-    // 每个结果窗口有唯一 label；后端按 label 定向派发流式事件，
-    // 故多个窗口可同时存在、各自接收自己请求的输出而互不干扰。
+    // 标题栏展示模型名 + 缓存 provider 设置（窗口生命周期内不变），随后发起首轮。
     const windowLabel = getCurrentWindow().label;
 
-    const start = async () => {
+    const init = async () => {
       if (askingRef.current) return;
       const path = await takePendingCapture(windowLabel);
-      if (!path) return;
 
-      askingRef.current = true;
-      setText("");
-      setError("");
-      setStatus("loading");
-      try {
-        const [
-          provider,
-          baseUrl,
-          authToken,
-          cliPath,
-          sessionDir,
-          openaiBaseUrl,
-          openaiApiKey,
-          openaiModel,
-          cloudflareBaseUrl,
-          cloudflareAigAuthorization,
-          cloudflareAigByokAlias,
-          cloudflareModel,
-          prompt,
-          proxyUrl,
-        ] = await Promise.all([
-          getLlmProvider(),
-          getAnthropicBaseUrl(),
-          getAnthropicAuthToken(),
-          getClaudeCliPath(),
-          getSessionDir(),
-          getOpenaiBaseUrl(),
-          getOpenaiApiKey(),
-          getOpenaiModel(),
-          getCloudflareBaseUrl(),
-          getCloudflareAigAuthorization(),
-          getCloudflareAigByokAlias(),
-          getCloudflareModel(),
-          getPresetPrompt(),
-          getProxyUrl(),
-        ]);
-        await askLlmAboutImage({
-          windowLabel,
-          imagePath: path,
-          prompt,
-          provider,
-          baseUrl,
-          authToken,
-          cliPath,
-          sessionDir,
-          openaiBaseUrl,
-          openaiApiKey,
-          openaiModel,
-          cloudflareBaseUrl,
-          cloudflareAigAuthorization,
-          cloudflareAigByokAlias,
-          cloudflareModel,
-          proxyUrl,
-        });
-      } catch (e) {
-        setError(String(e));
-        setStatus("error");
-      } finally {
-        askingRef.current = false;
+      const [
+        provider,
+        baseUrl,
+        authToken,
+        cliPath,
+        sessionDir,
+        openaiBaseUrl,
+        openaiApiKey,
+        openaiModel,
+        cloudflareBaseUrl,
+        cloudflareAigAuthorization,
+        cloudflareAigByokAlias,
+        cloudflareModel,
+        proxyUrl,
+        prompt,
+      ] = await Promise.all([
+        getLlmProvider(),
+        getAnthropicBaseUrl(),
+        getAnthropicAuthToken(),
+        getClaudeCliPath(),
+        getSessionDir(),
+        getOpenaiBaseUrl(),
+        getOpenaiApiKey(),
+        getOpenaiModel(),
+        getCloudflareBaseUrl(),
+        getCloudflareAigAuthorization(),
+        getCloudflareAigByokAlias(),
+        getCloudflareModel(),
+        getProxyUrl(),
+        getPresetPrompt(),
+      ]);
+
+      settingsRef.current = {
+        provider,
+        baseUrl,
+        authToken,
+        cliPath,
+        sessionDir,
+        openaiBaseUrl,
+        openaiApiKey,
+        openaiModel,
+        cloudflareBaseUrl,
+        cloudflareAigAuthorization,
+        cloudflareAigByokAlias,
+        cloudflareModel,
+        proxyUrl,
+      };
+      setModel(resolveModelName(provider, openaiModel, cloudflareModel));
+
+      if (!path) {
+        setStatus("idle");
+        return;
       }
+      imagePathRef.current = path;
+      await ask(prompt);
     };
 
-    void start();
+    void init();
 
     const unlistenPromises = [
       listen<string>("llm-result:chunk", (e) => {
         setStatus("streaming");
-        setText((prev) => prev + e.payload);
+        streamingRef.current += e.payload;
+        setStreaming(streamingRef.current);
       }),
-      listen("llm-result:done", () => setStatus("done")),
+      // 一轮结束：把流式文本并入对话历史，解锁输入框。
+      listen("llm-result:done", () => {
+        const finalText = streamingRef.current;
+        if (finalText) {
+          const committed: ChatMessage[] = [
+            ...turnsRef.current,
+            { role: "assistant", text: finalText },
+          ];
+          turnsRef.current = committed;
+          setTurns(committed);
+        }
+        streamingRef.current = "";
+        setStreaming("");
+        setStatus("done");
+        askingRef.current = false;
+      }),
       listen<string>("llm-result:error", (e) => {
         setError(e.payload);
         setStatus("error");
+        askingRef.current = false;
       }),
     ];
 
     return () => {
       unlistenPromises.forEach((p) => p.then((un) => un()));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [text]);
+  }, [turns, streaming, status]);
+
+  const busy = status === "loading" || status === "streaming";
+  // 首条（预设 prompt）不展示，仅作上下文。
+  const visibleTurns = turns.slice(1);
 
   return (
     <div
@@ -227,7 +319,7 @@ export const LlmResultPage = () => {
       >
         <div className="pointer-events-none flex items-center gap-2">
           <span className="relative flex w-2 h-2">
-            {(status === "loading" || status === "streaming") && (
+            {busy && (
               <span className="absolute inline-flex w-full h-full rounded-full bg-blue-400 opacity-75 animate-ping" />
             )}
             <span
@@ -256,27 +348,76 @@ export const LlmResultPage = () => {
       </header>
 
       <main
-        className={`flex-1 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
+        className={`flex flex-1 flex-col gap-3 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
           IS_MAC ? "bg-white/30" : "bg-white"
         }`}
       >
-        {status === "error" ? (
-          <div className="text-sm text-red-600 whitespace-pre-wrap">
+        {visibleTurns.map((turn, i) =>
+          turn.role === "user" ? (
+            <UserBubble key={i} text={turn.text} />
+          ) : (
+            <AssistantBubble key={i} text={turn.text} />
+          )
+        )}
+
+        {/* 正在流式生成的本轮助手输出 */}
+        {streaming ? (
+          <AssistantBubble text={streaming} />
+        ) : status === "loading" ? (
+          <BlobLoader label="正在请求模型" />
+        ) : null}
+
+        {status === "error" && error && (
+          <div className="self-start whitespace-pre-wrap text-sm text-red-600">
             {error}
           </div>
-        ) : text ? (
-          <div className="prose prose-sm prose-neutral max-w-none prose-pre:bg-neutral-100 prose-pre:text-neutral-800">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-          </div>
-        ) : status === "idle" ? (
-          <div className="text-sm text-neutral-400">请先截图。</div>
-        ) : (
-          <BlobLoader
-            label={status === "streaming" ? "正在生成内容" : "正在请求模型"}
-          />
         )}
+
+        {status === "idle" && visibleTurns.length === 0 && (
+          <div className="text-sm text-neutral-400">请先截图。</div>
+        )}
+
         <div ref={bottomRef} />
       </main>
+
+      {/* 追问输入框：保留首图与历史对话上下文 */}
+      <footer
+        className={`border-t border-black/[0.06] px-3 py-2 ${
+          IS_MAC ? "bg-white/40" : "bg-neutral-100"
+        }`}
+      >
+        <div className="flex items-end gap-2 rounded-xl border border-black/10 bg-white/80 px-2.5 py-1.5 transition-colors focus-within:border-blue-400">
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={input}
+            disabled={status === "idle"}
+            onChange={(e) => {
+              setInput(e.target.value);
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={
+              busy ? "正在回答，可继续输入…" : "继续追问（Enter 发送，Shift+Enter 换行）"
+            }
+            className="max-h-28 flex-1 resize-none bg-transparent text-sm leading-6 text-neutral-800 outline-none placeholder:text-neutral-400 disabled:cursor-not-allowed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15"
+          />
+          <button
+            onClick={submit}
+            disabled={busy || !input.trim()}
+            className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-neutral-300"
+          >
+            发送
+          </button>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -12,6 +12,62 @@ use crate::http_client::HttpClient;
 use crate::ocr::{self, PixelRect};
 use crate::state::AppState;
 
+/// 一轮对话消息。前端把整个对话历史（含本次追问）作为 `messages` 传入，
+/// 后端据此重建各 provider 的请求；首图只挂在第一条 user 消息上，
+/// 后续追问保留同一图片上下文。`role` 取 "user" / "assistant"。
+#[derive(serde::Deserialize)]
+pub struct ChatTurn {
+  pub role: String,
+  pub text: String,
+}
+
+/// 构造 Anthropic `/v1/messages` 的 messages 数组：
+/// 图片块只放在第一条消息里，其余轮次为纯文本。
+fn build_anthropic_messages(messages: &[ChatTurn], image_b64: &str) -> Vec<Value> {
+  messages
+    .iter()
+    .enumerate()
+    .map(|(i, turn)| {
+      let content = if i == 0 {
+        json!([
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": image_b64
+            }
+          },
+          { "type": "text", "text": turn.text }
+        ])
+      } else {
+        json!([{ "type": "text", "text": turn.text }])
+      };
+      json!({ "role": turn.role, "content": content })
+    })
+    .collect()
+}
+
+/// 构造 OpenAI 兼容 `/chat/completions` 的 messages 数组：
+/// 图片块（image_url）只放在第一条消息里，其余轮次为纯文本字符串内容。
+fn build_openai_messages(messages: &[ChatTurn], data_url: &str) -> Vec<Value> {
+  messages
+    .iter()
+    .enumerate()
+    .map(|(i, turn)| {
+      let content = if i == 0 {
+        json!([
+          { "type": "image_url", "image_url": { "url": data_url } },
+          { "type": "text", "text": turn.text }
+        ])
+      } else {
+        json!(turn.text)
+      };
+      json!({ "role": turn.role, "content": content })
+    })
+    .collect()
+}
+
 // base_url / auth_token 由前端从设置中读取并传入。
 // idealab 网关仅支持 claude-opus-4-6 / claude-opus-4-7。
 const LLM_MODEL: &str = "claude-opus-4-7";
@@ -101,7 +157,7 @@ pub async fn save_capture_to_temp(
 
   let path_str = path.to_string_lossy().to_string();
   log::info!("[llm] 截图已保存到临时文件：{path_str}");
-  // 临时文件由结果窗口对应的 ask_llm_about_image 在请求结束后自行删除。
+  // 临时文件随结果窗口存活（支持多轮追问复用同一张图），由窗口 Destroyed 事件删除。
   Ok(path_str)
 }
 
@@ -123,7 +179,7 @@ pub fn take_pending_capture(
 pub async fn ask_llm_about_image(
   window_label: String,
   image_path: String,
-  prompt: String,
+  messages: Vec<ChatTurn>,
   provider: String,
   base_url: String,
   auth_token: String,
@@ -160,7 +216,7 @@ pub async fn ask_llm_about_image(
           stream_llm_cli(
             label,
             &image_path,
-            &prompt,
+            &messages,
             &cli_path,
             &session_dir,
             &app,
@@ -171,7 +227,7 @@ pub async fn ask_llm_about_image(
           stream_llm_openai_compat(
             label,
             &image_path,
-            &prompt,
+            &messages,
             &openai_base_url,
             &openai_api_key,
             &openai_model,
@@ -184,7 +240,7 @@ pub async fn ask_llm_about_image(
           stream_llm_cloudflare(
             label,
             &image_path,
-            &prompt,
+            &messages,
             &cloudflare_base_url,
             &cloudflare_aig_authorization,
             &cloudflare_aig_byok_alias,
@@ -198,7 +254,7 @@ pub async fn ask_llm_about_image(
           stream_llm(
             label,
             &image_path,
-            &prompt,
+            &messages,
             &base_url,
             &auth_token,
             &app,
@@ -237,10 +293,8 @@ pub async fn ask_llm_about_image(
         app.emit_to(window_label.as_str(), "llm-result:error", err.clone());
     }
   }
-  // 请求结束（无论成败 / 中止）即删除本次截图临时文件，避免缓存目录堆积。
-  if let Err(e) = std::fs::remove_file(&image_path) {
-    log::warn!("[llm] 删除临时截图失败：{image_path}（{e}）");
-  }
+  // 不在此处删除截图临时文件：追问会复用同一张图片，文件随结果窗口存活，
+  // 由窗口 Destroyed 事件统一清理（见 lib.rs）。
   result
 }
 
@@ -249,7 +303,7 @@ pub async fn ask_llm_about_image(
 async fn stream_llm_cli(
   label: &str,
   image_path: &str,
-  prompt: &str,
+  messages: &[ChatTurn],
   cli_path: &str,
   session_dir: &str,
   app: &AppHandle,
@@ -301,9 +355,29 @@ async fn stream_llm_cli(
   let program = tokens.next().unwrap_or("claude");
   let extra_args: Vec<&str> = tokens.collect();
 
-  let full_prompt = format!(
-    "{prompt}\n\n请读取并查看这张本地截图后再回答，图片绝对路径：{image_path}"
-  );
+  // CLI 的 `-p` 只接受单段文本，无法像 HTTP provider 那样传多轮 messages。
+  // 单轮：沿用原行为，把预设 prompt 与图片路径拼在一起；
+  // 多轮：把历史对话整理成转写，让 CLI 结合上下文与同一张图回答最后的追问。
+  let full_prompt = if messages.len() <= 1 {
+    let prompt = messages.first().map(|t| t.text.as_str()).unwrap_or("");
+    format!(
+      "{prompt}\n\n请读取并查看这张本地截图后再回答，图片绝对路径：{image_path}"
+    )
+  } else {
+    let mut transcript = String::from(
+      "以下是围绕同一张截图的多轮对话。请先读取并查看这张本地截图，再结合下面的历史对话，回答最后一条用户追问。\n\n",
+    );
+    for turn in messages {
+      let who = if turn.role == "assistant" {
+        "助手"
+      } else {
+        "用户"
+      };
+      transcript.push_str(&format!("{who}：{}\n\n", turn.text));
+    }
+    transcript.push_str(&format!("图片绝对路径：{image_path}"));
+    transcript
+  };
 
   log::info!(
     "[llm] 启动 Claude Code CLI：{program} {} -p（{} 个环境变量，工作目录 {}）",
@@ -416,7 +490,7 @@ async fn stream_llm_cli(
 async fn stream_llm(
   label: &str,
   image_path: &str,
-  prompt: &str,
+  messages: &[ChatTurn],
   base_url: &str,
   auth_token: &str,
   app: &AppHandle,
@@ -433,28 +507,16 @@ async fn stream_llm(
     std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
   let image_b64 = STANDARD.encode(&image_bytes);
   log::info!(
-    "[llm] 读取图片 {} 字节，base64 编码完成",
-    image_bytes.len()
+    "[llm] 读取图片 {} 字节，base64 编码完成（{} 轮对话）",
+    image_bytes.len(),
+    messages.len()
   );
 
   let body = json!({
     "model": LLM_MODEL,
     "max_tokens": 2048,
     "stream": true,
-    "messages": [{
-      "role": "user",
-      "content": [
-        {
-          "type": "image",
-          "source": {
-            "type": "base64",
-            "media_type": "image/png",
-            "data": image_b64
-          }
-        },
-        { "type": "text", "text": prompt }
-      ]
-    }]
+    "messages": build_anthropic_messages(messages, &image_b64)
   });
 
   let endpoint = format!("{}/v1/messages", base_url.trim_end_matches('/'));
@@ -516,7 +578,7 @@ async fn stream_llm(
 async fn stream_llm_openai_compat(
   label: &str,
   image_path: &str,
-  prompt: &str,
+  messages: &[ChatTurn],
   base_url: &str,
   api_key: &str,
   model: &str,
@@ -537,21 +599,16 @@ async fn stream_llm_openai_compat(
     std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
   let image_b64 = STANDARD.encode(&image_bytes);
   log::info!(
-    "[llm] OpenAI 读取图片 {} 字节，base64 编码完成",
-    image_bytes.len()
+    "[llm] OpenAI 读取图片 {} 字节，base64 编码完成（{} 轮对话）",
+    image_bytes.len(),
+    messages.len()
   );
 
   let data_url = format!("data:image/png;base64,{image_b64}");
   let body = json!({
     "model": model,
     "stream": true,
-    "messages": [{
-      "role": "user",
-      "content": [
-        { "type": "image_url", "image_url": { "url": data_url } },
-        { "type": "text", "text": prompt }
-      ]
-    }]
+    "messages": build_openai_messages(messages, &data_url)
   });
 
   // 兼容用户在 base URL 里带或不带 /v1 后缀。
@@ -607,7 +664,7 @@ async fn stream_llm_openai_compat(
 async fn stream_llm_cloudflare(
   label: &str,
   image_path: &str,
-  prompt: &str,
+  messages: &[ChatTurn],
   base_url: &str,
   aig_auth: &str,
   byok_alias: &str,
@@ -632,21 +689,16 @@ async fn stream_llm_cloudflare(
     std::fs::read(image_path).map_err(|e| format!("读取截图失败：{e}"))?;
   let image_b64 = STANDARD.encode(&image_bytes);
   log::info!(
-    "[llm] Cloudflare 读取图片 {} 字节，base64 编码完成",
-    image_bytes.len()
+    "[llm] Cloudflare 读取图片 {} 字节，base64 编码完成（{} 轮对话）",
+    image_bytes.len(),
+    messages.len()
   );
 
   let data_url = format!("data:image/png;base64,{image_b64}");
   let body = json!({
     "model": model,
     "stream": true,
-    "messages": [{
-      "role": "user",
-      "content": [
-        { "type": "image_url", "image_url": { "url": data_url } },
-        { "type": "text", "text": prompt }
-      ]
-    }]
+    "messages": build_openai_messages(messages, &data_url)
   });
 
   let endpoint = format!(

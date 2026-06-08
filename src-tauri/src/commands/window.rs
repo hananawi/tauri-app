@@ -46,10 +46,13 @@ pub fn open_llm_result_window(
   // 时间戳 + 序号双重保证 label 唯一（同一毫秒内连续触发也不冲突）。
   let label = format!("{LLM_RESULT_PREFIX}{ts}-{existing}");
 
-  state
-    .lock()
-    .map_err(|e| e.to_string())?
-    .set_pending_llm_image(label.clone(), image_path);
+  {
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    // pending：触发首轮请求，被页面取走一次；
+    // image_path：窗口存活期持有，供多轮追问复用同一张图，窗口销毁时再删除。
+    guard.set_pending_llm_image(label.clone(), image_path.clone());
+    guard.set_llm_image_path(label.clone(), image_path);
+  }
 
   // 以鼠标所在屏（用户当前操作的屏）中心为基准，按已有窗口数做层叠偏移。
   let (base_x, base_y) = active_monitor_center(&app);

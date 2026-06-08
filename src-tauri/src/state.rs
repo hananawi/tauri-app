@@ -14,7 +14,12 @@ pub struct AppState {
   pub frozen_capture: Option<Vec<u8>>,
   /// 待处理的 LLM 截图：结果窗口 label → 该窗口要识别的截图路径。
   /// 每次截图新建一个独立的结果窗口，故按 label 分桶以支持多窗口并存。
+  /// 仅用于触发首轮请求：被窗口取走（消费一次）后即移除。
   pub pending_llm_images: HashMap<String, String>,
+  /// 结果窗口存活期间持有的截图路径：结果窗口 label → 截图临时文件路径。
+  /// 追问功能要求图片在多轮对话期间一直可读，故不再在单次请求结束后删除，
+  /// 而是在窗口被销毁时据此删除临时文件。
+  pub llm_image_paths: HashMap<String, String>,
   /// 进行中的 LLM 问答任务：结果窗口 label → 任务中止句柄。
   /// 窗口关闭时据此中止仍在跑的请求（HTTP 流 / CLI 子进程），避免后台空跑。
   pub llm_tasks: HashMap<String, AbortHandle>,
@@ -27,6 +32,7 @@ impl AppState {
       is_clipping: false,
       frozen_capture: None,
       pending_llm_images: HashMap::new(),
+      llm_image_paths: HashMap::new(),
       llm_tasks: HashMap::new(),
       current_clip_shortcut: None,
     }
@@ -38,6 +44,16 @@ impl AppState {
 
   pub fn take_pending_llm_image(&mut self, label: &str) -> Option<String> {
     self.pending_llm_images.remove(label)
+  }
+
+  /// 记下结果窗口存活期间要保留的截图路径，供窗口销毁时清理。
+  pub fn set_llm_image_path(&mut self, label: String, path: String) {
+    self.llm_image_paths.insert(label, path);
+  }
+
+  /// 取走并移除某结果窗口持有的截图路径（用于窗口销毁时删除临时文件）。
+  pub fn take_llm_image_path(&mut self, label: &str) -> Option<String> {
+    self.llm_image_paths.remove(label)
   }
 
   pub fn register_llm_task(&mut self, label: String, handle: AbortHandle) {

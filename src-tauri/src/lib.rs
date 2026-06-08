@@ -73,7 +73,8 @@ pub fn run() {
           }
         }
         // 结果窗口被销毁：中止它仍在进行的 LLM 问答请求，
-        // 避免用户关掉窗口后请求仍在后台空跑。
+        // 避免用户关掉窗口后请求仍在后台空跑；并删除该窗口持有的截图临时文件
+        // （追问期间图片一直保留，故清理时机移到窗口销毁，而非单次请求结束）。
         tauri::WindowEvent::Destroyed => {
           let label = window.label();
           if label.starts_with("llm-result-") {
@@ -81,6 +82,9 @@ pub fn run() {
               if let Ok(mut guard) = state.lock() {
                 if let Some(handle) = guard.take_llm_task(label) {
                   handle.abort();
+                }
+                if let Some(path) = guard.take_llm_image_path(label) {
+                  let _ = std::fs::remove_file(&path);
                 }
               }
             }

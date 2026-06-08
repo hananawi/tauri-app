@@ -18,10 +18,34 @@ import {
   getOpenaiBaseUrl,
   getOpenaiModel,
   getPresetPrompt,
+  getProxyUrl,
   getSessionDir,
 } from "../lib/settings";
+import type { LlmProvider } from "../lib/settings";
 
 type Status = "idle" | "loading" | "streaming" | "done" | "error";
+
+// Anthropic API provider 的模型在后端固定，没有前端配置项。
+// 与 src-tauri/src/commands/llm.rs 的 LLM_MODEL 常量保持一致。
+const ANTHROPIC_API_MODEL = "claude-opus-4-7";
+
+// 标题栏要展示的模型名：各 provider 取各自来源。
+const resolveModelName = (
+  provider: LlmProvider,
+  openaiModel: string,
+  cloudflareModel: string
+): string => {
+  switch (provider) {
+    case "api":
+      return ANTHROPIC_API_MODEL;
+    case "cli":
+      return "Claude CLI";
+    case "openai":
+      return openaiModel;
+    case "cloudflare":
+      return cloudflareModel;
+  }
+};
 
 const STATUS_LABEL: Record<Status, string> = {
   idle: "等待截图…",
@@ -78,8 +102,21 @@ export const LlmResultPage = () => {
   const [text, setText] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
+  const [model, setModel] = useState("");
   const askingRef = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // 标题栏展示当前模型名：挂载即读一次设置（结果窗口生命周期内设置不变）。
+    void (async () => {
+      const [provider, openaiModel, cloudflareModel] = await Promise.all([
+        getLlmProvider(),
+        getOpenaiModel(),
+        getCloudflareModel(),
+      ]);
+      setModel(resolveModelName(provider, openaiModel, cloudflareModel));
+    })();
+  }, []);
 
   useEffect(() => {
     // 每个结果窗口有唯一 label；后端按 label 定向派发流式事件，
@@ -110,6 +147,7 @@ export const LlmResultPage = () => {
           cloudflareAigByokAlias,
           cloudflareModel,
           prompt,
+          proxyUrl,
         ] = await Promise.all([
           getLlmProvider(),
           getAnthropicBaseUrl(),
@@ -124,6 +162,7 @@ export const LlmResultPage = () => {
           getCloudflareAigByokAlias(),
           getCloudflareModel(),
           getPresetPrompt(),
+          getProxyUrl(),
         ]);
         await askLlmAboutImage({
           windowLabel,
@@ -141,6 +180,7 @@ export const LlmResultPage = () => {
           cloudflareAigAuthorization,
           cloudflareAigByokAlias,
           cloudflareModel,
+          proxyUrl,
         });
       } catch (e) {
         setError(String(e));
@@ -203,6 +243,14 @@ export const LlmResultPage = () => {
             />
           </span>
           <span className="text-sm font-medium">{STATUS_LABEL[status]}</span>
+          {model && (
+            <span
+              title={model}
+              className="max-w-[180px] truncate rounded-md bg-black/[0.06] px-2 py-0.5 text-xs font-medium text-neutral-500"
+            >
+              {model}
+            </span>
+          )}
         </div>
         {!IS_MAC && <WindowControls />}
       </header>

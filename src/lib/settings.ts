@@ -24,6 +24,7 @@ const CF_BASE_URL_KEY = "cloudflareBaseUrl";
 const CF_AUTH_KEY = "cloudflareAigAuthorization";
 const CF_BYOK_ALIAS_KEY = "cloudflareAigByokAlias";
 const CF_MODEL_KEY = "cloudflareModel";
+const PROXY_URL_KEY = "proxyUrl";
 
 const DEFAULT_MODE: RecognitionMode = "llm";
 const DEFAULT_PROVIDER: LlmProvider = "api";
@@ -35,6 +36,8 @@ const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const DEFAULT_CF_BASE_URL =
   "https://gateway.ai.cloudflare.com/v1/fde103cecbb135298d9110a4ef8c8ed6/hananawi";
 const DEFAULT_CF_MODEL = "anthropic/claude-3-5-sonnet-20241022";
+// 默认留空＝直连；填了才对所有 HTTP provider 生效，cli 走子进程不受影响。
+const DEFAULT_PROXY_URL = "";
 export const DEFAULT_CLIP_SHORTCUT = "CommandOrControl+Shift+KeyR";
 
 const store = new LazyStore("settings.json");
@@ -193,6 +196,17 @@ export async function setCloudflareModel(model: string): Promise<void> {
   await store.save();
 }
 
+export async function getProxyUrl(): Promise<string> {
+  // 默认空＝直连；用户填了才走代理。
+  const url = await store.get<string>(PROXY_URL_KEY);
+  return url ?? DEFAULT_PROXY_URL;
+}
+
+export async function setProxyUrl(url: string): Promise<void> {
+  await store.set(PROXY_URL_KEY, url);
+  await store.save();
+}
+
 export async function getClipShortcut(): Promise<string> {
   const sc = await store.get<string>(CLIP_SHORTCUT_KEY);
   return sc ?? DEFAULT_CLIP_SHORTCUT;
@@ -233,6 +247,7 @@ const EXPORT_KEYS = [
   CF_AUTH_KEY,
   CF_BYOK_ALIAS_KEY,
   CF_MODEL_KEY,
+  PROXY_URL_KEY,
 ] as const;
 
 const EXPORT_KEY_SET = new Set<string>(EXPORT_KEYS);

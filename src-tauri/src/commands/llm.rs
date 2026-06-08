@@ -26,6 +26,51 @@ const CC_ANTHROPIC_BETA: &str = "claude-code-20250219,oauth-2025-04-20,context-1
 const CC_STAINLESS_PACKAGE_VERSION: &str = "0.94.0";
 const CC_STAINLESS_RUNTIME_VERSION: &str = "v24.3.0";
 
+/// reqwest 顶层错误（如 "error sending request for url …"）会把真正的根因
+/// 藏在 source 链里，仅用 `{e}` 打印看不到。这里把整条链拼出来并按类别标注，
+/// 便于区分是连接被拒 / DNS / TLS / 超时还是网络不通。
+fn describe_send_error(err: &reqwest::Error) -> String {
+  let mut parts = vec![err.to_string()];
+  let mut src = std::error::Error::source(err);
+  while let Some(e) = src {
+    parts.push(e.to_string());
+    src = std::error::Error::source(e);
+  }
+  let chain = parts.join(" ← ");
+
+  let kind = if err.is_timeout() {
+    "（连接/读取超时）"
+  } else if err.is_connect() {
+    "（无法建立连接：网络不通、DNS 解析失败或被代理/防火墙拦截）"
+  } else {
+    ""
+  };
+
+  format!("请求失败{kind}：{chain}")
+}
+
+/// 按用户配置的代理地址构造 HTTP 客户端：
+/// - 留空 → 沿用全局 client（跟随系统/环境变量代理，通常即直连）；
+/// - 填了 → 用 `Proxy::all` 让 http/https 请求都经此代理（含对 https 的 CONNECT 隧道）。
+///   支持 http / https / socks5，如 `http://localhost:7890`。
+fn build_http_client(
+  fallback: reqwest::Client,
+  proxy_url: &str,
+) -> Result<reqwest::Client, String> {
+  let proxy_url = proxy_url.trim();
+  if proxy_url.is_empty() {
+    return Ok(fallback);
+  }
+  let proxy = reqwest::Proxy::all(proxy_url)
+    .map_err(|e| format!("代理地址无效（{proxy_url}）：{e}"))?;
+  reqwest::Client::builder()
+    .proxy(proxy)
+    // 同上：读系统钥匙串根证书，避免 UnknownIssuer。
+    .tls_built_in_native_certs(true)
+    .build()
+    .map_err(|e| format!("构建代理 HTTP 客户端失败：{e}"))
+}
+
 /// 把冻屏整图按选区裁剪后存到临时文件，返回文件绝对路径（供 LLM 问答读取）。
 #[tauri::command]
 pub async fn save_capture_to_temp(
@@ -91,6 +136,7 @@ pub async fn ask_llm_about_image(
   cloudflare_aig_authorization: String,
   cloudflare_aig_byok_alias: String,
   cloudflare_model: String,
+  proxy_url: String,
   app: AppHandle,
   http: State<'_, HttpClient>,
   state: State<'_, Mutex<AppState>>,
@@ -102,7 +148,7 @@ pub async fn ask_llm_about_image(
   // 把流式请求放进独立的可中止 task：结果窗口关闭时凭 AbortHandle 中止它，
   // task 被丢弃会断开 HTTP 连接 / 丢弃 CLI 子进程（配合 kill_on_drop 杀掉进程），
   // 避免用户关掉窗口后请求仍在后台空跑、白白消耗 token 或 CPU。
-  let client = http.client();
+  let client = build_http_client(http.client(), &proxy_url)?;
   let task = {
     let app = app.clone();
     let label = window_label.clone();
@@ -437,7 +483,7 @@ async fn stream_llm(
     .json(&body)
     .send()
     .await
-    .map_err(|e| format!("请求失败：{e}"))?;
+    .map_err(|e| describe_send_error(&e))?;
 
   let status = resp.status();
   log::info!("[llm] 网关响应状态 {status}");
@@ -524,7 +570,7 @@ async fn stream_llm_openai_compat(
     .json(&body)
     .send()
     .await
-    .map_err(|e| format!("请求失败：{e}"))?;
+    .map_err(|e| describe_send_error(&e))?;
 
   let status = resp.status();
   log::info!("[llm] OpenAI 响应状态 {status}");
@@ -624,7 +670,7 @@ async fn stream_llm_cloudflare(
     .json(&body)
     .send()
     .await
-    .map_err(|e| format!("请求失败：{e}"))?;
+    .map_err(|e| describe_send_error(&e))?;
 
   let status = resp.status();
   log::info!("[llm] Cloudflare 响应状态 {status}");

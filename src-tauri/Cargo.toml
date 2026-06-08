@@ -24,6 +24,11 @@ tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-http = { version = "2", features = ["json"] }
+# 显式引入 tauri-plugin-http 间接依赖的 reqwest，仅为追加 rustls-tls-native-roots。
+# 默认 rustls 用编译进二进制的 webpki-roots，本机遇到的真实证书链（如 Cloudflare 的
+# Let's Encrypt → ISRG Root X1）却会 UnknownIssuer；改读系统钥匙串根证书后，
+# 信任行为与 curl / Postman 一致。default-features = false 避免顺带引入 native-tls 后端。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }

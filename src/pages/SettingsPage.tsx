@@ -18,6 +18,7 @@ import {
   getOpenaiBaseUrl,
   getOpenaiModel,
   getPresetPrompt,
+  getProxyUrl,
   getRecognitionMode,
   getSessionDir,
   importSettings,
@@ -36,6 +37,7 @@ import {
   setOpenaiBaseUrl,
   setOpenaiModel,
   setPresetPrompt,
+  setProxyUrl,
   setRecognitionMode,
   setSessionDir,
 } from "../lib/settings";
@@ -180,6 +182,7 @@ export const SettingsPage = () => {
   const [cfAuth, setCfAuthState] = useState("");
   const [cfAlias, setCfAliasState] = useState("");
   const [cfModel, setCfModelState] = useState("");
+  const [proxyUrl, setProxyUrlState] = useState("");
   const [prompt, setPrompt] = useState("");
   const [shortcut, setShortcut] = useState<string>("");
   const [recording, setRecording] = useState(false);
@@ -205,6 +208,7 @@ export const SettingsPage = () => {
     void getCloudflareAigAuthorization().then(setCfAuthState);
     void getCloudflareAigByokAlias().then(setCfAliasState);
     void getCloudflareModel().then(setCfModelState);
+    void getProxyUrl().then(setProxyUrlState);
     void getPresetPrompt().then(setPrompt);
     void getClipShortcut().then(setShortcut);
   }, []);
@@ -299,6 +303,10 @@ export const SettingsPage = () => {
     await setCloudflareModel(cfModel.trim());
   };
 
+  const handleProxyUrlBlur = async () => {
+    await setProxyUrl(proxyUrl.trim());
+  };
+
   const handlePromptBlur = async () => {
     await setPresetPrompt(prompt.trim());
   };
@@ -320,6 +328,7 @@ export const SettingsPage = () => {
       cfm,
       pp,
       sc,
+      px,
     ] = await Promise.all([
       getRecognitionMode(),
       getLlmProvider(),
@@ -336,6 +345,7 @@ export const SettingsPage = () => {
       getCloudflareModel(),
       getPresetPrompt(),
       getClipShortcut(),
+      getProxyUrl(),
     ]);
     setMode(m);
     setProvider(p);
@@ -352,6 +362,7 @@ export const SettingsPage = () => {
     setCfModelState(cfm);
     setPrompt(pp);
     setShortcut(sc);
+    setProxyUrlState(px);
     return sc;
   };
 
@@ -515,6 +526,25 @@ export const SettingsPage = () => {
         {activeTab === "llm" && (
         <section className="bg-white rounded-lg border border-neutral-200 p-4 space-y-3">
           <h2 className="text-sm font-semibold">LLM 接口配置</h2>
+
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-600">
+              网络代理
+            </span>
+            <input
+              type="text"
+              value={proxyUrl}
+              onChange={(e) => setProxyUrlState(e.target.value)}
+              onBlur={handleProxyUrlBlur}
+              placeholder="http://localhost:7890"
+              className="mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400"
+            />
+          </label>
+          <p className="text-xs text-neutral-400">
+            API / OpenAI / Cloudflare 等所有 HTTP 请求都经此代理；留空则直连。支持
+            http / https / socks5，例如 http://localhost:7890。本地 Claude CLI
+            走子进程，不受影响。
+          </p>
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-neutral-600">

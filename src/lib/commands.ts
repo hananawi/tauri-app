@@ -54,6 +54,7 @@ export async function askLlmAboutImage(args: {
   cloudflareAigAuthorization: string;
   cloudflareAigByokAlias: string;
   cloudflareModel: string;
+  proxyUrl: string;
 }): Promise<void> {
   return invoke("ask_llm_about_image", args);
 }

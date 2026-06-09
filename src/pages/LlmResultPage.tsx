@@ -148,6 +148,8 @@ export const LlmResultPage = () => {
   const turnsRef = useRef<ChatMessage[]>([]);
   const streamingRef = useRef("");
   const askingRef = useRef(false);
+  // 保证首轮初始化只跑一次（详见 useEffect 内 init 的说明）。
+  const initStartedRef = useRef(false);
   const imagePathRef = useRef("");
   const settingsRef = useRef<ProviderSettings | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -200,7 +202,12 @@ export const LlmResultPage = () => {
     const windowLabel = getCurrentWindow().label;
 
     const init = async () => {
-      if (askingRef.current) return;
+      // React.StrictMode 在 dev 下会双跑本 effect（挂载→清理→再挂载）。
+      // take_pending_capture 只消费一次，第二次会拿到 null 进而 setStatus("idle")，
+      // 把首轮已设的 "loading" 打回 idle —— 表现为首次提问看不到加载动画。
+      // 用同步置位的 ref 保证整个窗口生命周期内只初始化一次（ref 在 StrictMode 双跑间保留）。
+      if (initStartedRef.current) return;
+      initStartedRef.current = true;
       const path = await takePendingCapture(windowLabel);
 
       const [

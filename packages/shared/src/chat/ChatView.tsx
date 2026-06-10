@@ -77,15 +77,25 @@ export const ChatView = ({
   loaderLabel = "正在请求模型",
 }: ChatViewProps) => {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  // 是否自动跟随到底部：用户向上滚动后暂停，滚回底部或发新提问时恢复。
+  const followRef = useRef(true);
   const isPanel = variant === "panel";
 
-  // 新内容出现时滚到底部。
+  // 新内容出现时滚到底部（仅在跟随模式下）。
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = mainRef.current;
+    if (el && followRef.current) el.scrollTop = el.scrollHeight;
   }, [visibleTurns, streaming, status]);
 
+  const handleScroll = () => {
+    const el = mainRef.current;
+    if (!el) return;
+    followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
+
   const handleSubmit = () => {
+    followRef.current = true;
     submit();
     if (taRef.current) taRef.current.style.height = "auto";
   };
@@ -155,6 +165,8 @@ export const ChatView = ({
       </header>
 
       <main
+        ref={mainRef}
+        onScroll={handleScroll}
         className={`flex flex-1 flex-col gap-3 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
           !isPanel && isMac ? "bg-white/30" : "bg-white"
         }`}
@@ -183,8 +195,6 @@ export const ChatView = ({
         {status === "idle" && visibleTurns.length === 0 && emptyHint && (
           <div className="text-sm text-neutral-400">{emptyHint}</div>
         )}
-
-        <div ref={bottomRef} />
       </main>
 
       {/* 追问输入框：保留上下文与历史对话 */}

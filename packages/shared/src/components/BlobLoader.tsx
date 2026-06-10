@@ -45,7 +45,9 @@ export const BlobLoader = ({ label }: { label?: string }) => {
       </div>
       {label && <span className="bl-label">{label}</span>}
 
-      {/* SVG goo 滤镜：05/06/07/08/10/17/20 的液态融合效果依赖它 */}
+      {/* SVG goo 滤镜：05/06/07/08/10/17/20 的液态融合效果依赖它。
+          filter:url(#id) 不跨 Shadow DOM 边界，故滤镜内联在组件自身子树内，
+          在插件浮层（shadow root）里同样生效；同一 shadow 内只挂一个 loader 以免 id 冲突。 */}
       <svg width="0" height="0" className="bl-defs" aria-hidden="true">
         <defs>
           <filter id="bl-goo">

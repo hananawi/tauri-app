@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* 共享 @theme（fade-in 等）。用相对路径，避免依赖 Tailwind 对包 exports 的解析。 */
+@import "../../../packages/shared/src/styles/theme.css";
+
+/* ChatView / BlobLoader 等共享组件在 packages/shared 里，Tailwind 默认不扫
+   node_modules（@tachibana/shared 是 workspace 符号链接），不显式声明则其用到的
+   prose / animate-fade-in / 气泡类名会在 vite build 时被 purge 掉。
+   同时指向真实源码与 node_modules 符号链接双保险。 */
+@source "../../../packages/shared/src";
+@source "../node_modules/@tachibana/shared/src";

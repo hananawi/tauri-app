@@ -9,6 +9,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // @tachibana/shared 以 TS 源码消费（workspace 符号链接），不让 Vite 预打包它，
+  // 保证 React 插件能转换其中的 JSX 且 HMR 正常。
+  optimizeDeps: {
+    exclude: ["@tachibana/shared"],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

@@ -1,0 +1,18 @@
+/* 共享 Tailwind v4 主题 token，桌面端 global.css 与插件浮层 shadow.css 都 @import。
+   注意：@theme 里声明的 CSS 变量在 Tailwind v4 下会落到文档 :root；插件浮层在
+   Shadow DOM 内取不到 :root，故 shadow.css 需把用到的变量在 :host 重新声明
+   （见 apps/extension/src/content/shadow.css 的 :root→:host 处理）。 */
+@theme {
+  --animate-fade-in: fade-in 0.3s ease-out both;
+
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

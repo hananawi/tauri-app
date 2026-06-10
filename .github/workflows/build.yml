@@ -18,13 +18,13 @@ jobs:
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             build-args: --target universal-apple-darwin
             artifact-name: tauri-app-macos-dmg
-            artifact-path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            artifact-path: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - platform: windows-latest
             rust-targets: x86_64-pc-windows-msvc
             # Windows 只产出 NSIS 安装包
             build-args: --bundles nsis
             artifact-name: tauri-app-windows-nsis
-            artifact-path: src-tauri/target/release/bundle/nsis/*.exe
+            artifact-path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 45
@@ -52,13 +52,13 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: apps/desktop/src-tauri
 
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
       - name: Build Tauri (release)
-        run: pnpm tauri build ${{ matrix.build-args }}
+        run: pnpm --filter @tachibana/desktop tauri build ${{ matrix.build-args }}
 
       - name: Upload installer
         uses: actions/upload-artifact@v4

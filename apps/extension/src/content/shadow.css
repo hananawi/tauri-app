@@ -1,0 +1,26 @@
+/* 浮层（Shadow DOM）样式。以 ?inline 字符串注入 shadowRoot.adoptedStyleSheets，
+   绝不落成 content_scripts.css（否则污染宿主页）。 */
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* 共享 @theme（fade-in）。BlobLoader.css 也收进来，让其样式进同一内联字符串
+   —— content 构建已把 JS 里裸的 import "./BlobLoader.css" 解析为空。
+   用相对路径，避免依赖 Tailwind 对包 exports 的解析。 */
+@import "../../../../packages/shared/src/styles/theme.css";
+@import "../../../../packages/shared/src/components/BlobLoader.css";
+
+/* purge 陷阱：Tailwind 默认不扫 node_modules 符号链接，需显式声明共享组件源码，
+   否则 ChatView/BlobLoader 用到的 prose / animate-fade-in / 气泡类名会被删。
+   双保险：真实源码路径 + node_modules 符号链接。 */
+@source "../../../../packages/shared/src";
+@source "../../node_modules/@tachibana/shared/src";
+
+/* rem 陷阱：Shadow DOM 内 rem/prose 字号跟随宿主 <html> font-size，
+   在 :host 钉死基准，避免被宿主页 font-size 带偏。
+   :root 陷阱：@theme token 与 preflight 落在文档 :root，shadow 树取不到，
+   故注入时把编译后 CSS 的 :root 重写为 :host（见 index.tsx），这里再兜底基准。 */
+:host {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #262626;
+}

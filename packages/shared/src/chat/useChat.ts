@@ -68,7 +68,7 @@ export function useChat({
   const turnsRef = useRef<ChatMessage[]>([]);
   const streamingRef = useRef("");
   const askingRef = useRef(false);
-  // 保证首轮初始化只跑一次（StrictMode 双跑间 ref 保留）。
+  // 保证首轮 init 只跑一次（StrictMode 双跑间 ref 保留）。
   const initStartedRef = useRef(false);
   const contextRef = useRef<LlmContext | null>(null);
   const settingsRef = useRef<ProviderSettings | null>(null);
@@ -140,13 +140,13 @@ export function useChat({
   }, [input, ask]);
 
   useEffect(() => {
+    // init() 里的 take_pending_capture 只能消费一次，故只跑一次（StrictMode 在 dev
+    // 下会双跑本 effect，ref 守卫保证 init 不被调用第二次）。结果无条件落地：不要用
+    // 闭包标志拦截，否则 StrictMode 的假卸载会把这唯一一次 init 的结果丢掉，停在 idle。
     if (initStartedRef.current) return;
     initStartedRef.current = true;
-    let cancelled = false;
 
-    void (async () => {
-      const resolved = await init();
-      if (cancelled) return;
+    void init().then((resolved) => {
       settingsRef.current = resolved.settings;
       contextRef.current = resolved.context;
       setModel(resolved.model);
@@ -155,10 +155,9 @@ export function useChat({
       } else if (!resolved.context) {
         setStatus("idle");
       }
-    })();
+    });
 
     return () => {
-      cancelled = true;
       handleRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,7 +1,7 @@
 // 展示型聊天 UI，从 src/pages/LlmResultPage.tsx 抽出。props 驱动、variant 区分形态：
 // - desktop：Tauri 结果窗口（header 可拖拽 + 交通灯/窗口控件，h-screen）。
 // - panel：浏览器插件浮层（卡片，h-full，右上角关闭按钮）。
-import type { ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -47,6 +47,8 @@ export interface ChatViewProps {
   headerControls?: ReactNode;
   /** desktop：header 作为窗口拖拽区（data-tauri-drag-region）。 */
   headerDraggable?: boolean;
+  /** panel：按下 header 拖动浮层（光标变为 move）。 */
+  onHeaderMouseDown?: (e: ReactMouseEvent) => void;
   /** panel：右上角关闭按钮回调。 */
   onClose?: () => void;
   /** 覆盖状态文案（panel 的 idle 文案与 desktop 不同）。 */
@@ -71,6 +73,7 @@ export const ChatView = ({
   isMac = false,
   headerControls,
   headerDraggable = false,
+  onHeaderMouseDown,
   onClose,
   statusLabels = DEFAULT_STATUS_LABELS,
   emptyHint,
@@ -140,9 +143,10 @@ export const ChatView = ({
     >
       <header
         {...(headerDraggable ? { "data-tauri-drag-region": true } : {})}
+        onMouseDown={onHeaderMouseDown}
         className={`flex items-center gap-2 h-10 select-none border-b border-black/[0.06] ${
           isPanel
-            ? "px-3 bg-neutral-50"
+            ? `px-3 bg-neutral-50${onHeaderMouseDown ? " cursor-move" : ""}`
             : isMac
             ? "pl-20 pr-3"
             : "pl-4 pr-0 bg-neutral-100"

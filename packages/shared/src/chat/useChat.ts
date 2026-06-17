@@ -59,7 +59,9 @@ export function useChat({
   const [turns, setTurns] = useState<ChatMessage[]>([]);
   // 当前正在流式生成的助手文本（尚未并入 turns）。
   const [streaming, setStreaming] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
+  // autoStart 时打开即「将要提问」，初始就进 loading，避免浮层闪一帧 idle
+  //（插件浮层瞬时插入 DOM 时最明显）；init 解析出无输入再回落 idle。
+  const [status, setStatus] = useState<Status>(autoStart ? "loading" : "idle");
   const [error, setError] = useState("");
   const [model, setModel] = useState("");
   const [input, setInput] = useState("");
@@ -146,16 +148,23 @@ export function useChat({
     if (initStartedRef.current) return;
     initStartedRef.current = true;
 
-    void init().then((resolved) => {
-      settingsRef.current = resolved.settings;
-      contextRef.current = resolved.context;
-      setModel(resolved.model);
-      if (resolved.context && autoStart) {
-        ask(resolved.presetPrompt);
-      } else if (!resolved.context) {
-        setStatus("idle");
-      }
-    });
+    void init()
+      .then((resolved) => {
+        settingsRef.current = resolved.settings;
+        contextRef.current = resolved.context;
+        setModel(resolved.model);
+        if (resolved.context && autoStart) {
+          ask(resolved.presetPrompt);
+        } else {
+          // 无输入或不自动提问：回落 idle 等用户输入。
+          setStatus("idle");
+        }
+      })
+      .catch((e) => {
+        // init 失败（如插件 context 失效、设置读取异常）不再静默卡住，显式报错。
+        setError(e instanceof Error ? e.message : String(e));
+        setStatus("error");
+      });
 
     return () => {
       handleRef.current?.abort();

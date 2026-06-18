@@ -25,8 +25,16 @@ pub fn show_window(app: &AppHandle, label: &str) -> Result<(), String> {
 /// 每次截图都创建一个带唯一 label 的窗口（`llm-result-{时间戳}`），互不复用，
 /// 这样在等待某个窗口的接口返回时，可以再次截图触发新的请求并保留旧窗口。
 /// 截图路径按 label 暂存到 `AppState`，由窗口内的页面取走后发起请求。
+///
+/// **必须是 async 命令。** 同步命令运行在主线程上，而 Windows 上
+/// `WebviewWindowBuilder::build()` 会阻塞主线程等待 WebView2 控件创建完成，
+/// 该完成回调又投递到同一个被阻塞的主线程消息队列里 → 自死锁（窗口框弹出后
+/// 整个应用卡死）。改成 async 后命令体跑在异步运行时的工作线程上，`build()`
+/// 把窗口创建派发到事件循环、只阻塞工作线程，主线程消息循环保持空闲、能正常
+/// 投递 WebView2 的完成回调，死锁消除。函数体内无 `.await`，且 `MutexGuard`
+/// 在 build 前的独立作用域内释放，不存在跨 await 持锁问题。
 #[tauri::command]
-pub fn open_llm_result_window(
+pub async fn open_llm_result_window(
   image_path: String,
   app: AppHandle,
   state: State<'_, Mutex<AppState>>,

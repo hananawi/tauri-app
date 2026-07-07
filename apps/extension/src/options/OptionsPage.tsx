@@ -43,6 +43,124 @@ const inputCls =
   "mt-1 w-full text-xs bg-neutral-50 border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-blue-400";
 const labelCls = "text-xs font-medium text-neutral-600";
 
+const iconBtnCls =
+  "flex h-6 w-6 items-center justify-center rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700";
+
+// 密文输入框：默认打码，带「显示/隐藏」切换与「一键复制」，方便查看和复制 token。
+interface SecretInputProps {
+  value: string;
+  onChange: (v: string) => void;
+  /** 失焦提交（通常做 trim 后写入设置）。 */
+  onCommit: (v: string) => void;
+  placeholder?: string;
+}
+
+const SecretInput = ({
+  value,
+  onChange,
+  onCommit,
+  placeholder,
+}: SecretInputProps) => {
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // 剪贴板不可用时静默忽略：用户仍可点「显示」后手动选中复制。
+    }
+  };
+
+  return (
+    <div className="relative mt-1">
+      <input
+        type={revealed ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => onCommit(value)}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-neutral-200 bg-neutral-50 py-1.5 pl-2 pr-14 text-xs focus:border-blue-400 focus:outline-none"
+      />
+      <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => setRevealed((v) => !v)}
+          className={iconBtnCls}
+          title={revealed ? "隐藏" : "显示"}
+          aria-label={revealed ? "隐藏" : "显示"}
+        >
+          {revealed ? (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+              <line x1="2" y1="2" x2="22" y2="22" />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className={iconBtnCls}
+          title={copied ? "已复制" : "复制"}
+          aria-label={copied ? "已复制" : "复制"}
+        >
+          {copied ? (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5 text-green-600"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          ) : (
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const OptionsPage = () => {
   const settings = useMemo(
     () =>
@@ -161,13 +279,11 @@ export const OptionsPage = () => {
             </label>
             <label className="block">
               <span className={labelCls}>Auth Token</span>
-              <input
-                type="password"
+              <SecretInput
                 value={authToken}
-                onChange={(e) => setAuthToken(e.target.value)}
-                onBlur={() => void settings.setAnthropicAuthToken(authToken.trim())}
+                onChange={setAuthToken}
+                onCommit={(v) => void settings.setAnthropicAuthToken(v.trim())}
                 placeholder="Bearer Token"
-                className={inputCls}
               />
             </label>
             <p className="text-xs text-neutral-400">
@@ -191,13 +307,11 @@ export const OptionsPage = () => {
             </label>
             <label className="block">
               <span className={labelCls}>API Key</span>
-              <input
-                type="password"
+              <SecretInput
                 value={openaiApiKey}
-                onChange={(e) => setOpenaiApiKey(e.target.value)}
-                onBlur={() => void settings.setOpenaiApiKey(openaiApiKey.trim())}
+                onChange={setOpenaiApiKey}
+                onCommit={(v) => void settings.setOpenaiApiKey(v.trim())}
                 placeholder="sk-..."
-                className={inputCls}
               />
             </label>
             <label className="block">
@@ -229,15 +343,13 @@ export const OptionsPage = () => {
             </label>
             <label className="block">
               <span className={labelCls}>cf-aig-authorization</span>
-              <input
-                type="password"
+              <SecretInput
                 value={cfAuth}
-                onChange={(e) => setCfAuth(e.target.value)}
-                onBlur={() =>
-                  void settings.setCloudflareAigAuthorization(cfAuth.trim())
+                onChange={setCfAuth}
+                onCommit={(v) =>
+                  void settings.setCloudflareAigAuthorization(v.trim())
                 }
                 placeholder="Bearer 后的 token，可省略 Bearer 前缀"
-                className={inputCls}
               />
             </label>
             <label className="block">

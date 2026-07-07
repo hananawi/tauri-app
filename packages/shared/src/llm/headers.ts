@@ -57,5 +57,10 @@ export function cloudflareHeaders(
     "content-type": "application/json",
     "cf-aig-authorization": aigAuthHeader,
     "cf-aig-byok-alias": byokAlias,
+    // AI Gateway 会把 anthropic-* header 透传给上游 Anthropic（官方文档示例中
+    // anthropic-version 即被转发）。浏览器发起的请求带 Origin，Anthropic 会要求
+    // 此 header 放行；补上后经网关透传即可通过。对非 Anthropic 上游是未知 header，
+    // 被忽略、无副作用。
+    "anthropic-dangerous-direct-browser-access": "true",
   };
 }

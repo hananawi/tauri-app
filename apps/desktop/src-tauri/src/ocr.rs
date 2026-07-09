@@ -125,7 +125,6 @@ fn show_mask_window(
   let window = app
     .get_webview_window("clip")
     .ok_or("clip window not found")?;
-  position_window(&window, monitor)?;
 
   // 逻辑尺寸 = 物理像素 / 缩放比。直接从目标屏算出下发，避免前端竞态。
   let scale = monitor.scale_factor();
@@ -137,10 +136,9 @@ fn show_mask_window(
     .emit("window-will-show", size)
     .map_err(|e| e.to_string())?;
 
-  window.show().map_err(|e| e.to_string())?;
-  // 平台相关地强制夺取键盘焦点：Windows 上全局快捷键触发时本进程在后台，
-  // 普通 set_focus 会被系统拦截，导致蒙层里按 Enter / Esc 无反应。
-  imp::focus_clip_window(&window)?;
+  // 定位铺满目标屏 + 显示 + 抢键盘焦点，细节平台各异（mac 要处理全屏 Space
+  // 与异步派发时序，Windows 要绕系统的前台窗口限制），整体下沉到平台实现。
+  imp::present_clip_window(&window, monitor)?;
   Ok(())
 }
 
@@ -162,34 +160,6 @@ fn target_monitor(app: &AppHandle) -> Result<tauri::Monitor, String> {
     .or_else(|| monitors.first())
     .cloned()
     .ok_or_else(|| "找不到任何显示器".to_string())
-}
-
-/// 把 `clip` 蒙层窗口铺满目标显示器。
-fn position_window(
-  window: &tauri::WebviewWindow,
-  monitor: &tauri::Monitor,
-) -> Result<(), String> {
-  use tauri::{PhysicalPosition, PhysicalSize};
-
-  window
-    .set_size(PhysicalSize::new(
-      monitor.size().width,
-      monitor.size().height,
-    ))
-    .map_err(|e| e.to_string())?;
-  window
-    .set_position(PhysicalPosition::new(
-      monitor.position().x,
-      monitor.position().y,
-    ))
-    .map_err(|e| e.to_string())?;
-  window.set_always_on_top(true).map_err(|e| e.to_string())?;
-  // macOS 上全屏 app 处于独立的 Space，蒙层窗口默认只在自己的 Space 显示，
-  // 盖不住全屏应用。让它加入所有 Space（含全屏 Space），才能覆盖全屏 app。
-  window
-    .set_visible_on_all_workspaces(true)
-    .map_err(|e| e.to_string())?;
-  Ok(())
 }
 
 /// 把冻屏整图按像素选区裁剪，返回裁剪后的 PNG。选区会被夹到图像范围内。
@@ -242,4 +212,14 @@ pub fn warmup() {
 /// Windows 上不需要，函数本身在 windows.rs 里也是 no-op。
 pub fn install_tray_click_fix() {
   imp::install_tray_click_fix();
+}
+
+/// mac 专属：把 clip 蒙层窗口就地转换成 nonactivating NSPanel，
+/// 使其能在不激活本进程的前提下拿键盘焦点、盖住全屏 Space。
+/// 须在主线程、窗口首次显示前调用一次。
+#[cfg(target_os = "macos")]
+pub fn init_clip_panel(
+  window: &tauri::WebviewWindow,
+) -> Result<(), String> {
+  imp::init_clip_panel(window)
 }

@@ -95,6 +95,14 @@ fn setup_macos_specific(app: &mut tauri::App) {
 
   // 修首次点击托盘菜单闪烁的问题（accessory app 特有）。
   ocr::install_tray_click_fix();
+
+  // 蒙层窗口转 nonactivating NSPanel：不激活进程即可拿键盘焦点。
+  // 常规窗口抢焦点要激活 app，而激活会被窗口服务器拒之于全屏 Space 之外。
+  if let Some(clip) = app.get_webview_window("clip") {
+    if let Err(err) = ocr::init_clip_panel(&clip) {
+      eprintln!("clip 窗口转 NSPanel 失败：{err}");
+    }
+  }
 }
 
 fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {

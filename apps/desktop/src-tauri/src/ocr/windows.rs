@@ -85,6 +85,30 @@ pub fn warmup() {
   // no-op：Windows 不需要预热（不再有本地 OCR 引擎）。
 }
 
+/// 定位蒙层窗口铺满目标屏、显示并抢键盘焦点。
+pub fn present_clip_window(
+  window: &tauri::WebviewWindow,
+  monitor: &tauri::Monitor,
+) -> Result<(), String> {
+  use tauri::{PhysicalPosition, PhysicalSize};
+
+  window
+    .set_size(PhysicalSize::new(
+      monitor.size().width,
+      monitor.size().height,
+    ))
+    .map_err(|e| e.to_string())?;
+  window
+    .set_position(PhysicalPosition::new(
+      monitor.position().x,
+      monitor.position().y,
+    ))
+    .map_err(|e| e.to_string())?;
+  window.set_always_on_top(true).map_err(|e| e.to_string())?;
+  window.show().map_err(|e| e.to_string())?;
+  focus_clip_window(window)
+}
+
 /// 把冻屏蒙层窗口切到前台并交出键盘焦点。
 ///
 /// 截图由全局快捷键触发，此时本进程在后台，Windows 会拦截后台进程的
@@ -94,7 +118,7 @@ pub fn warmup() {
 /// 解决办法：先用 `AttachThreadInput` 把本线程的输入队列挂到当前前台窗口
 /// 所属线程上，让系统把这次 `SetForegroundWindow` 当成「前台进程自己发起」
 /// 而放行；切到前台后再调 Tauri 的 `set_focus` 把焦点交给 WebView2 子窗口。
-pub fn focus_clip_window(
+fn focus_clip_window(
   window: &tauri::WebviewWindow,
 ) -> Result<(), String> {
   use windows::Win32::Foundation::HWND;

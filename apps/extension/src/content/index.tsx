@@ -15,6 +15,16 @@ interface Anchor {
   y: number;
 }
 
+// ?inline CSS 没有独立样式表的 base URL；Vite 产出的 /assets/... 若原样注入，
+// 会错误地指向宿主页。转换为扩展 URL 后，KaTeX 字体才能从扩展包内加载。
+function resolveExtensionAssetUrls(css: string) {
+  return css.replace(
+    /url\((["']?)(\/assets\/[^)"']+)\1\)/g,
+    (_match, _quote, path: string) =>
+      `url("${chrome.runtime.getURL(path.slice(1))}")`
+  );
+}
+
 function ContentApp({ host }: { host: HTMLElement }) {
   // 选区按钮锚点 / 已打开的浮层。
   const [sel, setSel] = useState<Anchor | null>(null);
@@ -111,7 +121,9 @@ function mount() {
 
   // 编译后的 CSS 字符串注入 shadow；把落在文档 :root 的 token/preflight 重写到 :host。
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(shadowCss.replace(/:root\b/g, ":host"));
+  sheet.replaceSync(
+    resolveExtensionAssetUrls(shadowCss).replace(/:root\b/g, ":host")
+  );
   shadow.adoptedStyleSheets = [sheet];
 
   (document.documentElement || document.body).appendChild(host);

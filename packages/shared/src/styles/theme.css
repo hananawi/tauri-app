@@ -1,3 +1,6 @@
+/* ChatView 的 Markdown 数学公式样式。这里导入可同时覆盖桌面端和插件 Shadow DOM。 */
+@import "katex/dist/katex.min.css";
+
 /* 共享 Tailwind v4 主题 token，桌面端 global.css 与插件浮层 shadow.css 都 @import。
    注意：@theme 里声明的 CSS 变量在 Tailwind v4 下会落到文档 :root；插件浮层在
    Shadow DOM 内取不到 :root，故 shadow.css 需把用到的变量在 :host 重新声明
@@ -15,4 +18,11 @@
       transform: translateY(0);
     }
   }
+}
+
+/* 窄浮层里的长公式允许横向滚动，不撑破聊天卡片。 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25rem;
 }

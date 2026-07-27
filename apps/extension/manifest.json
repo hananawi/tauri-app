@@ -16,6 +16,12 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/KaTeX_*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "options_page": "options.html",
   "action": {
     "default_title": "划词问 AI 设置"

@@ -4,7 +4,9 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { BlobLoader } from "../components/BlobLoader";
 import type { ChatMessage, Status } from "../llm/types";
 
@@ -26,7 +28,12 @@ const UserBubble = ({ text }: { text: string }) => (
 // 助手气泡：左对齐 Markdown 渲染。
 const AssistantBubble = ({ text }: { text: string }) => (
   <div className="prose prose-sm prose-neutral max-w-none self-start prose-pre:bg-neutral-100 prose-pre:text-neutral-800">
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+    >
+      {text}
+    </ReactMarkdown>
   </div>
 );
 

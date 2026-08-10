@@ -36,8 +36,8 @@ export const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 export const DEFAULT_CF_BASE_URL =
   "https://gateway.ai.cloudflare.com/v1/fde103cecbb135298d9110a4ef8c8ed6/hananawi";
 export const DEFAULT_CF_MODEL = "anthropic/claude-3-5-sonnet-20241022";
-// 默认留空＝直连；填了才对所有 HTTP provider 生效，cli 走子进程不受影响。
-export const DEFAULT_PROXY_URL = "";
+// 默认走本机代理；用户清空后可恢复直连。对所有 HTTP provider 生效，cli 走子进程不受影响。
+export const DEFAULT_PROXY_URL = "http://localhost:7890";
 export const DEFAULT_CLIP_SHORTCUT = "CommandOrControl+Shift+KeyR";
 
 // 允许导入/导出的所有键（含旧 dashscope 字段，便于跨版本迁移）。

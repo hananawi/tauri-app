@@ -1,5 +1,5 @@
 // 展示型聊天 UI，从 src/pages/LlmResultPage.tsx 抽出。props 驱动、variant 区分形态：
-// - desktop：Tauri 结果窗口（header 可拖拽 + 交通灯/窗口控件，h-screen）。
+// - desktop：Tauri 结果窗口（不透明背景 + header 可拖拽 + 交通灯/窗口控件，h-screen）。
 // - panel：浏览器插件浮层（卡片，h-full，右上角关闭按钮）。
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useEffect, useRef } from "react";
@@ -48,7 +48,7 @@ export interface ChatViewProps {
   input: string;
   setInput: (v: string) => void;
   submit: () => void;
-  /** desktop + macOS：圆角 + 毛玻璃 + 交通灯让位。 */
+  /** desktop + macOS：圆角 + 交通灯让位。 */
   isMac?: boolean;
   /** desktop + Windows：自绘窗口控件，渲染在 header 右侧。 */
   headerControls?: ReactNode;
@@ -145,7 +145,7 @@ export const ChatView = ({
       className={`flex flex-col overflow-hidden text-neutral-800 ${
         isPanel
           ? "h-full rounded-2xl border border-black/10 bg-white shadow-2xl"
-          : `h-screen ${isMac ? "rounded-xl" : "bg-neutral-50"}`
+          : `h-screen bg-neutral-50 ${isMac ? "rounded-xl" : ""}`
       }`}
     >
       <header
@@ -178,9 +178,7 @@ export const ChatView = ({
       <main
         ref={mainRef}
         onScroll={handleScroll}
-        className={`flex flex-1 flex-col gap-3 overflow-auto px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent ${
-          !isPanel && isMac ? "bg-white/30" : "bg-white"
-        }`}
+        className="flex flex-1 flex-col gap-3 overflow-auto bg-white px-4 py-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/15 [&::-webkit-scrollbar-track]:bg-transparent"
       >
         {visibleTurns.map((turn, i) =>
           turn.role === "user" ? (
@@ -210,9 +208,7 @@ export const ChatView = ({
 
       {/* 追问输入框：保留上下文与历史对话 */}
       <footer
-        className={`border-t border-black/[0.06] px-3 py-2 ${
-          !isPanel && isMac ? "bg-white/40" : "bg-neutral-100"
-        }`}
+        className="border-t border-black/[0.06] bg-neutral-100 px-3 py-2"
       >
         <div className="flex items-end gap-2 rounded-xl border border-black/10 bg-white/80 px-2.5 py-1.5 transition-colors focus-within:border-blue-400">
           <textarea

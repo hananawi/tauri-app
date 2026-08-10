@@ -27,7 +27,7 @@ import {
   getSessionDir,
 } from "../lib/settings";
 
-// macOS 走毛玻璃 + 交通灯悬浮：需要圆角，且 header 左侧要给交通灯让位。
+// macOS 交通灯悬浮：需要圆角，且 header 左侧要给交通灯让位。
 const IS_MAC =
   typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
 

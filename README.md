@@ -32,14 +32,14 @@ pnpm install
 桌面端：
 
 ```bash
-pnpm desktop:dev      # = pnpm --filter @tachibana/desktop tauri dev
-pnpm desktop:build    # 生产包
+pnpm dev:desktop      # = pnpm --filter @tachibana/desktop tauri dev
+pnpm build:desktop    # 生产包
 ```
 
 浏览器插件：
 
 ```bash
-pnpm ext:build        # 构建到 apps/extension/dist
+pnpm build:ext        # = pnpm --filter @tachibana/extension build
 ```
 
 然后在 Chrome `chrome://extensions` 打开「开发者模式」→「加载已解压的扩展程序」→

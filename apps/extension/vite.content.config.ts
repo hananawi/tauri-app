@@ -26,6 +26,14 @@ function ignoreBareCssSideEffects(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), ignoreBareCssSideEffects()],
 
+  // Chromium rejects content scripts containing Unicode noncharacters such as
+  // a literal U+FFFF, even though the file is structurally valid UTF-8. Some
+  // bundled Markdown regex tables contain that code point, so escape all
+  // non-ASCII output instead of emitting it literally.
+  esbuild: {
+    charset: "ascii",
+  },
+
   optimizeDeps: {
     exclude: ["@tachibana/shared"],
   },

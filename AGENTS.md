@@ -20,9 +20,9 @@ This is a **pnpm workspace monorepo**（根 `pnpm-workspace.yaml`：`apps/*` + `
 
 ## Build, Test, and Development Commands
 - `pnpm install`: 安装全部 workspace 依赖（在仓库根执行）。
-- `pnpm --filter @tachibana/desktop tauri dev` (或根 `pnpm desktop:dev`): 启动桌面端（Vite + Rust 热重载）。
-- `pnpm --filter @tachibana/desktop tauri build` (或根 `pnpm desktop:build`): 打桌面端生产包。
-- `pnpm --filter @tachibana/extension build` (或根 `pnpm ext:build`): 构建插件到 `apps/extension/dist`（先 bg+options，再 content IIFE）。
+- `pnpm --filter @tachibana/desktop tauri dev` (或根 `pnpm dev:desktop`): 启动桌面端（Vite + Rust 热重载）。
+- `pnpm --filter @tachibana/desktop tauri build` (或根 `pnpm build:desktop`): 打桌面端生产包。
+- `pnpm --filter @tachibana/extension build` (或根 `pnpm build:ext`): 构建插件到 `apps/extension/dist`（先 bg+options，再 content IIFE）。
   - Chrome `chrome://extensions` 开「开发者模式」→「加载已解压」→ 选 `apps/extension/dist`。
 - `cd apps/desktop/src-tauri && cargo test`: Run Rust unit/integration tests.
 
@@ -46,4 +46,3 @@ This is a **pnpm workspace monorepo**（根 `pnpm-workspace.yaml`：`apps/*` + `
 - Keep `tauri.conf.json` `security.csp` aligned with actual needs; avoid `null` in production.
 - 插件：`manifest.json` 用 `optional_host_permissions: ["<all_urls>"]`，在 options 页保存 base URL 后按需申请对应 origin；fetch 只在 Service Worker 跑（绕过宿主页 CORS）。
 - Never commit secrets; prefer OS keychains or Tauri secure store plugin.
-
